@@ -19,11 +19,11 @@ import {
   moveAreaWithCards,
 } from "@/lib/gameLogic";
 import { saveRoomZip, loadRoomZip } from "@/lib/zip";
-import type { Action, Card, CardDef, Chip, Deck, GameObject, Hand } from "@/lib/types";
+import type { Action, Card, CardDef, Chip, ChipDef, Deck, GameObject, Hand } from "@/lib/types";
 import { CHIP_DEFS } from "@/lib/types";
 import { Sidebar } from "./Sidebar";
 import { ObjRender } from "./objects";
-import { PlayerDlg, CtxMenu, SbCtxMenu, EditDlg, CardDefDlg, tb } from "./Dialogs";
+import { PlayerDlg, CtxMenu, SbCtxMenu, EditDlg, CardDefDlg, ChipDefDlg, tb } from "./Dialogs";
 
 function kindZOf(kind: GameObject["kind"]) {
   return { chip: 300, card: 200, counter: 100, deck: 10, hand: 10 }[kind] ?? 1;
@@ -31,7 +31,7 @@ function kindZOf(kind: GameObject["kind"]) {
 
 export default function Board({ roomId }: { roomId: string }) {
   const { connected, room, myId, myName, setMyName, dispatch, applyLocal, send } = useRoomSocket(roomId);
-  const { objects, cardDefs, imageStore, players, mode, ownerId } = room;
+  const { objects, cardDefs, chipDefs, imageStore, players, mode, ownerId } = room;
   const isOwner = ownerId === myId;
 
   const [sidebar, setSidebar] = useState(true);
@@ -40,13 +40,14 @@ export default function Board({ roomId }: { roomId: string }) {
   const [camOffset, setCamOffset] = useState({ x: 0, y: 0 });
   const [showPlayerDlg, setShowPlayerDlg] = useState(true);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; obj: GameObject } | null>(null);
-  const [sbCtxMenu, setSbCtxMenu] = useState<{ x: number; y: number; def: CardDef } | null>(null);
+  const [sbCtxMenu, setSbCtxMenu] = useState<{ x: number; y: number; kind: "card" | "chip"; def: CardDef | ChipDef } | null>(null);
   const [cardDefDlg, setCardDefDlg] = useState<{ mode: "new" | "edit"; def?: CardDef } | null>(null);
+  const [chipDefDlg, setChipDefDlg] = useState<{ def?: ChipDef } | null>(null);
   const [editTarget, setEditTarget] = useState<GameObject | null>(null);
   const [hoverCardId, setHoverCardId] = useState<string | null>(null);
   const [draggingFromSidebar, setDraggingFromSidebar] = useState<
     | { type: "cardDef"; data: CardDef }
-    | { type: "chip"; data: (typeof CHIP_DEFS)[number] }
+    | { type: "chip"; data: ChipDef }
     | { type: "deck" | "hand" | "counter"; data: Record<string, never> }
     | null
   >(null);
@@ -450,6 +451,40 @@ export default function Board({ roomId }: { roomId: string }) {
     [cardDefDlg, cardDefs, objects, dispatch]
   );
 
+  const saveCardDefsBulk = useCallback(
+    (defs: { text: string; imageDataId: string | null }[]) => {
+      const newDefs: CardDef[] = defs.map((d, i) => ({
+        defId: `def_${Date.now().toString(36)}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+        text: d.text,
+        imageDataId: d.imageDataId,
+      }));
+      dispatch({ kind: "setCardDefs", cardDefs: [...cardDefs, ...newDefs] });
+      setCardDefDlg(null);
+    },
+    [cardDefs, dispatch]
+  );
+
+  const saveChipDef = useCallback(
+    (patch: { label: string; color: string; effect: import("@/lib/types").ChipEffect }) => {
+      if (chipDefDlg?.def) {
+        const def = chipDefDlg.def;
+        dispatch({ kind: "setChipDefs", chipDefs: chipDefs.map((d) => (d.defId === def.defId ? { ...d, ...patch } : d)) });
+      } else {
+        const nd: ChipDef = { defId: `chipdef_${Date.now().toString(36)}`, ...patch };
+        dispatch({ kind: "setChipDefs", chipDefs: [...chipDefs, nd] });
+      }
+      setChipDefDlg(null);
+    },
+    [chipDefDlg, chipDefs, dispatch]
+  );
+
+  const deleteChipDef = useCallback(
+    (defId: string) => {
+      dispatch({ kind: "setChipDefs", chipDefs: chipDefs.filter((d) => d.defId !== defId) });
+    },
+    [chipDefs, dispatch]
+  );
+
   const doSave = useCallback(() => {
     saveRoomZip(room, roomId);
   }, [room, roomId]);
@@ -459,6 +494,7 @@ export default function Board({ roomId }: { roomId: string }) {
       const loaded = await loadRoomZip(file);
       dispatch({ kind: "setObjects", objects: loaded.objects });
       dispatch({ kind: "setCardDefs", cardDefs: loaded.cardDefs });
+      dispatch({ kind: "setChipDefs", chipDefs: loaded.chipDefs });
       dispatch({ kind: "setPlayers", players: loaded.players });
       dispatch({ kind: "setImageStore", imageStore: loaded.imageStore });
       dispatch({ kind: "setMode", mode: loaded.mode });
@@ -481,6 +517,7 @@ export default function Board({ roomId }: { roomId: string }) {
           sidebarTab={sidebarTab}
           setSidebarTab={setSidebarTab}
           cardDefs={cardDefs}
+          chipDefs={chipDefs}
           imageStore={imageStore}
           onNewCardDef={() => setCardDefDlg({ mode: "new" })}
           onDragStartCardDef={(e, def) => {
@@ -494,11 +531,21 @@ export default function Board({ roomId }: { roomId: string }) {
           onCtxMenuCardDef={(e, def) => {
             e.preventDefault();
             e.stopPropagation();
-            setSbCtxMenu({ x: e.clientX, y: e.clientY, def });
+            setSbCtxMenu({ x: e.clientX, y: e.clientY, kind: "card", def });
           }}
+          onNewChipDef={() => setChipDefDlg({})}
           onDragStartChip={(e, def) => {
             e.dataTransfer.effectAllowed = "copy";
             setDraggingFromSidebar({ type: "chip", data: def });
+          }}
+          onDblClickChipDef={(e, def) => {
+            e.stopPropagation();
+            setChipDefDlg({ def });
+          }}
+          onCtxMenuChipDef={(e, def) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setSbCtxMenu({ x: e.clientX, y: e.clientY, kind: "chip", def });
           }}
           onDragStartOther={(e, type) => {
             e.dataTransfer.effectAllowed = "copy";
@@ -693,11 +740,16 @@ export default function Board({ roomId }: { roomId: string }) {
           menu={sbCtxMenu}
           onClose={() => setSbCtxMenu(null)}
           onEdit={() => {
-            setCardDefDlg({ mode: "edit", def: sbCtxMenu.def });
+            if (sbCtxMenu.kind === "card") setCardDefDlg({ mode: "edit", def: sbCtxMenu.def as CardDef });
+            else setChipDefDlg({ def: sbCtxMenu.def as ChipDef });
             setSbCtxMenu(null);
           }}
           onDelete={() => {
-            dispatch({ kind: "setCardDefs", cardDefs: cardDefs.filter((d) => d.defId !== sbCtxMenu.def.defId) });
+            if (sbCtxMenu.kind === "card") {
+              dispatch({ kind: "setCardDefs", cardDefs: cardDefs.filter((d) => d.defId !== sbCtxMenu.def.defId) });
+            } else {
+              deleteChipDef(sbCtxMenu.def.defId);
+            }
             setSbCtxMenu(null);
           }}
         />
@@ -720,9 +772,11 @@ export default function Board({ roomId }: { roomId: string }) {
           storeImage={storeImage}
           onClose={() => setCardDefDlg(null)}
           onSave={saveCardDef}
+          onSaveBulk={saveCardDefsBulk}
           newImageDataId={`img_${Date.now().toString(36)}`}
         />
       )}
+      {chipDefDlg && <ChipDefDlg def={chipDefDlg.def} onClose={() => setChipDefDlg(null)} onSave={saveChipDef} />}
     </div>
   );
 }

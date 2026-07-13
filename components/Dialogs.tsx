@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CardDef, GameObject, Player } from "@/lib/types";
+import type { CardDef, ChipDef, ChipEffect, GameObject, Player } from "@/lib/types";
+import { EFFECT_LABELS, defaultChipLabel } from "@/lib/types";
 
 export const tb = (active = false): React.CSSProperties => ({
   background: active ? "#21262d" : "transparent",
@@ -164,7 +165,7 @@ export function SbCtxMenu({
   onEdit,
   onDelete,
 }: {
-  menu: { x: number; y: number; def: CardDef };
+  menu: { x: number; y: number; def: CardDef | ChipDef };
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -226,7 +227,7 @@ export function EditDlg({
   );
 }
 
-// ── カード定義ダイアログ（画像ファイル選択対応） ───────────
+// ── カード定義ダイアログ（画像ファイル選択・一括追加対応） ───
 export function CardDefDlg({
   mode,
   def,
@@ -234,6 +235,7 @@ export function CardDefDlg({
   storeImage,
   onClose,
   onSave,
+  onSaveBulk,
   newImageDataId,
 }: {
   mode: "new" | "edit";
@@ -242,13 +244,21 @@ export function CardDefDlg({
   storeImage: (id: string, base64: string) => void;
   onClose: () => void;
   onSave: (patch: { text: string; imageDataId: string | null }) => void;
+  onSaveBulk: (defs: { text: string; imageDataId: string | null }[]) => void;
   newImageDataId: string;
 }) {
+  const [bulkMode, setBulkMode] = useState(false);
   const [inputType, setInputType] = useState<"text" | "image">(def?.imageDataId ? "image" : "text");
   const [text, setText] = useState(def?.text || "");
   const [previewUrl, setPreviewUrl] = useState(def?.imageDataId ? imageStore[def.imageDataId] || "" : "");
   const imageDataId = def?.defId || newImageDataId;
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // 一括追加用：画像は複数選択、テキストは改行区切り
+  const [bulkText, setBulkText] = useState("");
+  const [bulkLabel, setBulkLabel] = useState("");
+  const [bulkImages, setBulkImages] = useState<{ id: string; url: string }[]>([]);
+  const bulkFileRef = useRef<HTMLInputElement>(null);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -262,7 +272,30 @@ export function CardDefDlg({
     reader.readAsDataURL(file);
   };
 
+  const onBulkFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach((file, i) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const b64 = ev.target?.result as string;
+        const id = `img_${Date.now().toString(36)}_${i}_${Math.random().toString(36).slice(2, 6)}`;
+        storeImage(id, b64);
+        setBulkImages((prev) => [...prev, { id, url: b64 }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const save = () => {
+    if (bulkMode) {
+      if (inputType === "text") {
+        const lines = bulkText.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+        onSaveBulk(lines.map((line) => ({ text: line, imageDataId: null })));
+      } else {
+        onSaveBulk(bulkImages.map((img) => ({ text: bulkLabel, imageDataId: img.id })));
+      }
+      return;
+    }
     if (inputType === "text") onSave({ text, imageDataId: null });
     else onSave({ text, imageDataId: previewUrl ? imageDataId : null });
   };
@@ -270,7 +303,16 @@ export function CardDefDlg({
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 5000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
       <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 14, padding: 28, minWidth: 340, maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.8)" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: "#e2e8f0" }}>{mode === "new" ? "カードを新規作成" : "カードを編集"}</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0" }}>{mode === "new" ? "カードを新規作成" : "カードを編集"}</div>
+          {mode === "new" && (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#8b949e", cursor: "pointer" }}>
+              <input type="checkbox" checked={bulkMode} onChange={(e) => setBulkMode(e.target.checked)} />
+              一括追加
+            </label>
+          )}
+        </div>
+
         <div style={{ display: "flex", gap: 0, marginBottom: 16, border: "1px solid #30363d", borderRadius: 6, overflow: "hidden" }}>
           <button
             onClick={() => setInputType("text")}
@@ -285,30 +327,167 @@ export function CardDefDlg({
             画像
           </button>
         </div>
-        <div style={{ marginBottom: 8, fontSize: 11, color: "#8b949e" }}>カード名・テキスト</div>
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="カード名やテキストを入力"
-          style={{ width: "100%", background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, padding: "8px 10px", color: "#e2e8f0", fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}
-        />
-        {inputType === "image" && (
+
+        {!bulkMode && (
+          <>
+            <div style={{ marginBottom: 8, fontSize: 11, color: "#8b949e" }}>カード名・テキスト</div>
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="カード名やテキストを入力"
+              style={{ width: "100%", background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, padding: "8px 10px", color: "#e2e8f0", fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}
+            />
+            {inputType === "image" && (
+              <div>
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  style={{ width: "100%", background: "#21262d", border: "1px solid #30363d", borderRadius: 6, padding: "8px 0", color: "#94a3b8", cursor: "pointer", fontSize: 12, marginBottom: 10 }}
+                >
+                  📁 画像ファイルを選択
+                </button>
+                <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
+                {previewUrl && <img src={previewUrl} alt="" style={{ width: "100%", maxHeight: 120, objectFit: "contain", borderRadius: 6, marginBottom: 10, border: "1px solid #30363d" }} />}
+              </div>
+            )}
+          </>
+        )}
+
+        {bulkMode && inputType === "text" && (
           <div>
-            <button
-              onClick={() => fileRef.current?.click()}
-              style={{ width: "100%", background: "#21262d", border: "1px solid #30363d", borderRadius: 6, padding: "8px 0", color: "#94a3b8", cursor: "pointer", fontSize: 12, marginBottom: 10 }}
-            >
-              📁 画像ファイルを選択
-            </button>
-            <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
-            {previewUrl && <img src={previewUrl} alt="" style={{ width: "100%", maxHeight: 120, objectFit: "contain", borderRadius: 6, marginBottom: 10, border: "1px solid #30363d" }} />}
+            <div style={{ marginBottom: 8, fontSize: 11, color: "#8b949e" }}>1行につき1枚のカードとして作成されます</div>
+            <textarea
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+              placeholder={"カードA\nカードB\nカードC"}
+              style={{ width: "100%", minHeight: 130, background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, padding: 8, color: "#e2e8f0", fontSize: 13, resize: "vertical", boxSizing: "border-box", marginBottom: 8 }}
+            />
+            <div style={{ fontSize: 11, color: "#6b7280" }}>
+              {bulkText.split("\n").map((l) => l.trim()).filter((l) => l).length} 枚作成されます
+            </div>
           </div>
         )}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+
+        {bulkMode && inputType === "image" && (
+          <div>
+            <div style={{ marginBottom: 8, fontSize: 11, color: "#8b949e" }}>共通テキスト（任意）</div>
+            <input
+              value={bulkLabel}
+              onChange={(e) => setBulkLabel(e.target.value)}
+              placeholder="全カード共通のテキスト（空欄可）"
+              style={{ width: "100%", background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, padding: "8px 10px", color: "#e2e8f0", fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}
+            />
+            <button
+              onClick={() => bulkFileRef.current?.click()}
+              style={{ width: "100%", background: "#21262d", border: "1px solid #30363d", borderRadius: 6, padding: "8px 0", color: "#94a3b8", cursor: "pointer", fontSize: 12, marginBottom: 10 }}
+            >
+              📁 画像ファイルを複数選択
+            </button>
+            <input ref={bulkFileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={onBulkFilesChange} />
+            {bulkImages.length > 0 && (
+              <>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                  {bulkImages.map((img) => (
+                    <img key={img.id} src={img.url} alt="" style={{ width: 44, height: 60, objectFit: "cover", borderRadius: 4, border: "1px solid #30363d" }} />
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: "#6b7280" }}>{bulkImages.length} 枚作成されます</div>
+              </>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
           <button onClick={onClose} style={tb()}>
             キャンセル
           </button>
           <button onClick={save} style={{ ...tb(), background: "#1d4ed8", color: "#e2e8f0", borderColor: "#1d4ed8" }}>
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── チップ定義ダイアログ（色はカラーピッカー、効果は種別＋数値で指定） ──
+export function ChipDefDlg({
+  def,
+  onClose,
+  onSave,
+}: {
+  def?: ChipDef;
+  onClose: () => void;
+  onSave: (patch: { label: string; color: string; effect: ChipEffect }) => void;
+}) {
+  const [op, setOp] = useState<ChipEffect["op"]>(def?.effect.op || "add");
+  const [amount, setAmount] = useState<number>(def?.effect && "amount" in def.effect ? def.effect.amount : 5);
+  const [color, setColor] = useState(def?.color || "#4ade80");
+  const [label, setLabel] = useState(def?.label ?? "");
+  const [labelTouched, setLabelTouched] = useState(!!def);
+
+  const effect: ChipEffect = op === "none" ? { op: "none" } : { op, amount };
+  const autoLabel = defaultChipLabel(effect);
+  const effectiveLabel = labelTouched && label ? label : autoLabel;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 5000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 14, padding: 28, minWidth: 320, maxWidth: 380, boxShadow: "0 8px 40px rgba(0,0,0,0.8)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: "#e2e8f0" }}>{def ? "チップを編集" : "チップを新規作成"}</div>
+
+        <div style={{ marginBottom: 8, fontSize: 11, color: "#8b949e" }}>効果</div>
+        <select
+          value={op}
+          onChange={(e) => setOp(e.target.value as ChipEffect["op"])}
+          style={{ width: "100%", background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, padding: "8px 10px", color: "#e2e8f0", fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}
+        >
+          {(Object.keys(EFFECT_LABELS) as ChipEffect["op"][]).map((k) => (
+            <option key={k} value={k}>
+              {EFFECT_LABELS[k]}
+            </option>
+          ))}
+        </select>
+
+        {op !== "none" && (
+          <>
+            <div style={{ marginBottom: 8, fontSize: 11, color: "#8b949e" }}>数値</div>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(Number(e.target.value))}
+              style={{ width: "100%", background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, padding: "8px 10px", color: "#e2e8f0", fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}
+            />
+          </>
+        )}
+
+        <div style={{ marginBottom: 8, fontSize: 11, color: "#8b949e" }}>表示ラベル（空欄で自動: {autoLabel}）</div>
+        <input
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            setLabelTouched(true);
+          }}
+          placeholder={autoLabel}
+          style={{ width: "100%", background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, padding: "8px 10px", color: "#e2e8f0", fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}
+        />
+
+        <div style={{ marginBottom: 8, fontSize: 11, color: "#8b949e" }}>色</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} style={{ width: 44, height: 32, border: "1px solid #30363d", borderRadius: 6, background: "none", cursor: "pointer", padding: 0 }} />
+          <div
+            style={{ width: 40, height: 40, borderRadius: "50%", background: color, border: "2px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.6)" }}
+          >
+            {effectiveLabel}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={tb()}>
+            キャンセル
+          </button>
+          <button
+            onClick={() => onSave({ label: effectiveLabel, color, effect })}
+            style={{ ...tb(), background: "#1d4ed8", color: "#e2e8f0", borderColor: "#1d4ed8" }}
+          >
             保存
           </button>
         </div>

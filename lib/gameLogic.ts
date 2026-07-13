@@ -19,9 +19,12 @@ export function calcPower(chips: Chip[]): string {
   let base = 0;
   let multi = 1;
   chips.forEach((c) => {
-    if (typeof c.value === "number") base += c.value;
-    else if (c.value === "2x") multi *= 2;
-    else if (c.value === "half") multi /= 2;
+    const e = c.effect;
+    if (!e) return;
+    if (e.op === "add") base += e.amount;
+    else if (e.op === "sub") base -= e.amount;
+    else if (e.op === "mul") multi *= e.amount;
+    else if (e.op === "div") multi /= e.amount || 1;
   });
   let t = base * multi;
   t = Math.floor(t / 5) * 5;
@@ -163,9 +166,9 @@ export const mkCounter = (x: number, y: number) => ({
 export const mkChip = (
   x: number,
   y: number,
-  def: { defId: string; label: string; value: number | "2x" | "half" | "life"; color: string },
+  def: { defId: string; label: string; color: string; effect: import("./types").ChipEffect },
   zOrder = 0
-): Chip => ({ id: uid(), kind: "chip", x, y, ...def, zOrder });
+): Chip => ({ id: uid(), kind: "chip", x, y, defId: def.defId, label: def.label, color: def.color, effect: def.effect, zOrder });
 
 // ── Z優先度（種別間・固定） ────────────────────────────────────
 export function kindZ(kind: GameObject["kind"]): number {
@@ -289,6 +292,8 @@ export function applyAction(state: RoomState, action: Action): RoomState {
       return { ...state, mode: action.mode };
     case "setCardDefs":
       return { ...state, cardDefs: action.cardDefs };
+    case "setChipDefs":
+      return { ...state, chipDefs: action.chipDefs };
     case "setPlayers":
       return { ...state, players: action.players };
     case "setImage":

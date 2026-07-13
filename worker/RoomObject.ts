@@ -14,6 +14,7 @@ function emptyState(): RoomState {
     mode: "edit",
     players: [],
     cardDefs: [],
+    chipDefs: [],
     objects: [],
     imageStore: {},
   };

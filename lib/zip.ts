@@ -1,13 +1,14 @@
 "use client";
 
 import JSZip from "jszip";
-import type { CardDef, GameObject, Player, RoomState } from "./types";
+import type { CardDef, ChipDef, GameObject, Player, RoomState } from "./types";
 
 type RoomJson = {
   version: 1;
   mode: "edit" | "play";
   players: Player[];
   cardDefs: CardDef[];
+  chipDefs: ChipDef[];
   objects: GameObject[];
 };
 
@@ -37,6 +38,7 @@ export async function saveRoomZip(room: RoomState, roomId: string): Promise<void
     mode: room.mode,
     players: room.players,
     cardDefs: room.cardDefs,
+    chipDefs: room.chipDefs,
     objects: room.objects,
   };
   zip.file("room.json", JSON.stringify(roomJson, null, 2));
@@ -63,6 +65,7 @@ export async function loadRoomZip(file: File): Promise<{
   mode: "edit" | "play";
   players: Player[];
   cardDefs: CardDef[];
+  chipDefs: ChipDef[];
   objects: GameObject[];
   imageStore: { [imageDataId: string]: string };
 }> {
@@ -91,6 +94,7 @@ export async function loadRoomZip(file: File): Promise<{
     mode: roomJson.mode,
     players: roomJson.players,
     cardDefs: roomJson.cardDefs,
+    chipDefs: roomJson.chipDefs || [],
     objects: roomJson.objects,
     imageStore,
   };

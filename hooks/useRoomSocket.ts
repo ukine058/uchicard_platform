@@ -5,7 +5,7 @@ import { applyAction } from "@/lib/gameLogic";
 import type { Action, ClientMessage, Player, RoomState, ServerMessage } from "@/lib/types";
 
 function emptyState(): RoomState {
-  return { ownerId: null, mode: "edit", players: [], cardDefs: [], objects: [], imageStore: {} };
+  return { ownerId: null, mode: "edit", players: [], cardDefs: [], chipDefs: [], objects: [], imageStore: {} };
 }
 
 function getOrCreateMyId(): string {

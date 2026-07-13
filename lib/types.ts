@@ -23,6 +23,22 @@ export type Card = {
   zOrder: number;
 };
 
+// チップの効果は自由記述テキストではなく、種別＋数値で構造化する。
+// （自由記述だと解釈がぶれる／誤入力に弱いため、種別を限定して書式を固定する方式を採用）
+export type ChipEffect =
+  | { op: "add"; amount: number } // 数値計算＋
+  | { op: "sub"; amount: number } // 数値計算－
+  | { op: "mul"; amount: number } // 数値計算×
+  | { op: "div"; amount: number } // 数値計算÷
+  | { op: "none" }; // 効果なし（装飾・目印用）
+
+export type ChipDef = {
+  defId: string;
+  label: string;
+  color: string;
+  effect: ChipEffect;
+};
+
 export type Chip = {
   id: string;
   kind: "chip";
@@ -30,8 +46,8 @@ export type Chip = {
   y: number;
   defId: string;
   label: string;
-  value: number | "2x" | "half" | "life";
   color: string;
+  effect: ChipEffect;
   zOrder: number;
 };
 
@@ -72,6 +88,7 @@ export type RoomState = {
   mode: "edit" | "play";
   players: Player[];
   cardDefs: CardDef[];
+  chipDefs: ChipDef[];
   objects: GameObject[];
   imageStore: { [imageDataId: string]: string };
 };
@@ -92,6 +109,7 @@ export type Action =
   | { kind: "deleteObj"; id: string }
   | { kind: "setMode"; mode: "edit" | "play" }
   | { kind: "setCardDefs"; cardDefs: CardDef[] }
+  | { kind: "setChipDefs"; chipDefs: ChipDef[] }
   | { kind: "setPlayers"; players: Player[] }
   | { kind: "setImage"; imageDataId: string; data: string }
   | { kind: "setImageStore"; imageStore: { [imageDataId: string]: string } };
@@ -105,14 +123,39 @@ export type ServerMessage =
   | { type: "action"; payload: Action; from: string }
   | { type: "players"; players: Player[] };
 
-export const CHIP_DEFS = [
-  { defId: "c5", label: "+5", value: 5 as number, color: "#4ade80" },
-  { defId: "c10", label: "+10", value: 10 as number, color: "#22c55e" },
-  { defId: "c50", label: "+50", value: 50 as number, color: "#16a34a" },
-  { defId: "cm5", label: "-5", value: -5 as number, color: "#f87171" },
-  { defId: "cm10", label: "-10", value: -10 as number, color: "#ef4444" },
-  { defId: "cm50", label: "-50", value: -50 as number, color: "#dc2626" },
-  { defId: "c2x", label: "×2", value: "2x" as const, color: "#facc15" },
-  { defId: "chalf", label: "½", value: "half" as const, color: "#fb923c" },
-  { defId: "cdiamond", label: "💠", value: "life" as const, color: "#60a5fa" },
+// 組み込みのチップ定義（常に候補として表示される。編集・削除不可）
+export const CHIP_DEFS: ChipDef[] = [
+  { defId: "c5", label: "+5", color: "#4ade80", effect: { op: "add", amount: 5 } },
+  { defId: "c10", label: "+10", color: "#22c55e", effect: { op: "add", amount: 10 } },
+  { defId: "c50", label: "+50", color: "#16a34a", effect: { op: "add", amount: 50 } },
+  { defId: "cm5", label: "-5", color: "#f87171", effect: { op: "sub", amount: 5 } },
+  { defId: "cm10", label: "-10", color: "#ef4444", effect: { op: "sub", amount: 10 } },
+  { defId: "cm50", label: "-50", color: "#dc2626", effect: { op: "sub", amount: 50 } },
+  { defId: "c2x", label: "×2", color: "#facc15", effect: { op: "mul", amount: 2 } },
+  { defId: "chalf", label: "÷2", color: "#fb923c", effect: { op: "div", amount: 2 } },
+  { defId: "cnone", label: "💠", color: "#60a5fa", effect: { op: "none" } },
 ];
+
+export const EFFECT_LABELS: Record<ChipEffect["op"], string> = {
+  add: "数値計算＋",
+  sub: "数値計算－",
+  mul: "数値計算×",
+  div: "数値計算÷",
+  none: "効果なし",
+};
+
+export function defaultChipLabel(effect: ChipEffect): string {
+  switch (effect.op) {
+    case "add":
+      return `+${effect.amount}`;
+    case "sub":
+      return `-${effect.amount}`;
+    case "mul":
+      return `×${effect.amount}`;
+    case "div":
+      return `÷${effect.amount}`;
+    case "none":
+      return "―";
+  }
+}
+
