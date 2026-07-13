@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyAction } from "@/lib/gameLogic";
 import type { Action, ClientMessage, Player, RoomState, ServerMessage } from "@/lib/types";
+import { CHIP_DEFS } from "@/lib/types";
 
 function emptyState(): RoomState {
-  return { ownerId: null, mode: "edit", players: [], cardDefs: [], chipDefs: [], objects: [], imageStore: {} };
+  return { ownerId: null, mode: "edit", players: [], cardDefs: [], chipDefs: [...CHIP_DEFS], objects: [], imageStore: {} };
 }
 
 function getOrCreateMyId(): string {
@@ -59,7 +60,8 @@ export function useRoomSocket(roomId: string) {
     ws.onmessage = (ev) => {
       const msg: ServerMessage = JSON.parse(ev.data);
       if (msg.type === "init") {
-        setRoom(msg.state);
+        // 古いスキーマの状態が送られてきても不足項目で落ちないようデフォルトとマージ
+        setRoom({ ...emptyState(), ...msg.state });
       } else if (msg.type === "action") {
         setRoom((p) => applyAction(p, msg.payload));
       } else if (msg.type === "players") {

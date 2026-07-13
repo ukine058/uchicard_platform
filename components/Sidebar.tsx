@@ -1,14 +1,26 @@
 "use client";
 
+import { useRef, useState } from "react";
 import type { CardDef, ChipDef } from "@/lib/types";
-import { CHIP_DEFS } from "@/lib/types";
+
+const toggleBtn = (active: boolean): React.CSSProperties => ({
+  background: active ? "#1d4ed8" : "#21262d",
+  border: "1px solid " + (active ? "#1d4ed8" : "#30363d"),
+  borderRadius: 6,
+  padding: "7px 10px",
+  color: "#e2e8f0",
+  cursor: "pointer",
+  fontSize: 11,
+  fontWeight: 600,
+  whiteSpace: "nowrap",
+});
 
 export function Sidebar({
   sidebarRef,
   sidebarTab,
   setSidebarTab,
   cardDefs,
-  chipDefs,
+  chipDefs = [],
   imageStore,
   onNewCardDef,
   onDragStartCardDef,
@@ -18,6 +30,8 @@ export function Sidebar({
   onDragStartChip,
   onDblClickChipDef,
   onCtxMenuChipDef,
+  onReorderCardDefs,
+  onReorderChipDefs,
   onDragStartOther,
 }: {
   sidebarRef: React.RefObject<HTMLDivElement>;
@@ -34,8 +48,54 @@ export function Sidebar({
   onDragStartChip: (e: React.DragEvent, def: ChipDef) => void;
   onDblClickChipDef: (e: React.MouseEvent, def: ChipDef) => void;
   onCtxMenuChipDef: (e: React.MouseEvent, def: ChipDef) => void;
+  onReorderCardDefs: (next: CardDef[]) => void;
+  onReorderChipDefs: (next: ChipDef[]) => void;
   onDragStartOther: (e: React.DragEvent, type: "deck" | "hand" | "counter") => void;
 }) {
+  const [cardOrderMode, setCardOrderMode] = useState(false);
+  const [chipOrderMode, setChipOrderMode] = useState(false);
+  const dragIndexRef = useRef<number | null>(null);
+
+  const onCardItemDragStart = (e: React.DragEvent, def: CardDef, idx: number) => {
+    if (cardOrderMode) {
+      dragIndexRef.current = idx;
+      e.dataTransfer.effectAllowed = "move";
+      return;
+    }
+    onDragStartCardDef(e, def);
+  };
+  const onCardItemDrop = (e: React.DragEvent, idx: number) => {
+    if (!cardOrderMode || dragIndexRef.current === null) return;
+    e.preventDefault();
+    const from = dragIndexRef.current;
+    dragIndexRef.current = null;
+    if (from === idx) return;
+    const next = [...cardDefs];
+    const [moved] = next.splice(from, 1);
+    next.splice(idx, 0, moved);
+    onReorderCardDefs(next);
+  };
+
+  const onChipItemDragStart = (e: React.DragEvent, def: ChipDef, idx: number) => {
+    if (chipOrderMode) {
+      dragIndexRef.current = idx;
+      e.dataTransfer.effectAllowed = "move";
+      return;
+    }
+    onDragStartChip(e, def);
+  };
+  const onChipItemDrop = (e: React.DragEvent, idx: number) => {
+    if (!chipOrderMode || dragIndexRef.current === null) return;
+    e.preventDefault();
+    const from = dragIndexRef.current;
+    dragIndexRef.current = null;
+    if (from === idx) return;
+    const next = [...chipDefs];
+    const [moved] = next.splice(from, 1);
+    next.splice(idx, 0, moved);
+    onReorderChipDefs(next);
+  };
+
   return (
     <div
       ref={sidebarRef}
@@ -57,21 +117,42 @@ export function Sidebar({
       <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
         {sidebarTab === "card" && (
           <div>
-            <button
-              onClick={onNewCardDef}
-              style={{ width: "100%", background: "#1d4ed8", border: "none", borderRadius: 6, padding: "7px 0", color: "#e2e8f0", cursor: "pointer", fontSize: 12, fontWeight: 600, marginBottom: 10 }}
-            >
-              ＋ 新規カード作成
-            </button>
-            {cardDefs.map((def) => (
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              <button
+                onClick={onNewCardDef}
+                style={{ flex: 1, background: "#1d4ed8", border: "none", borderRadius: 6, padding: "7px 0", color: "#e2e8f0", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+              >
+                ＋ 新規カード作成
+              </button>
+              <button onClick={() => setCardOrderMode((v) => !v)} style={toggleBtn(cardOrderMode)}>
+                {cardOrderMode ? "完了" : "並び替え"}
+              </button>
+            </div>
+            {cardOrderMode && <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 8 }}>ドラッグして順番を入れ替えられます</div>}
+            {cardDefs.map((def, idx) => (
               <div
                 key={def.defId}
                 draggable
-                onDragStart={(e) => onDragStartCardDef(e, def)}
-                onDoubleClick={(e) => onDblClickCardDef(e, def)}
-                onContextMenu={(e) => onCtxMenuCardDef(e, def)}
-                style={{ background: "#21262d", border: "1px solid #30363d", borderRadius: 6, padding: "7px 10px", fontSize: 12, color: "#e2e8f0", cursor: "grab", marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}
+                onDragStart={(e) => onCardItemDragStart(e, def, idx)}
+                onDragOver={(e) => cardOrderMode && e.preventDefault()}
+                onDrop={(e) => onCardItemDrop(e, idx)}
+                onDoubleClick={(e) => !cardOrderMode && onDblClickCardDef(e, def)}
+                onContextMenu={(e) => !cardOrderMode && onCtxMenuCardDef(e, def)}
+                style={{
+                  background: "#21262d",
+                  border: `1px solid ${cardOrderMode ? "#4c1d95" : "#30363d"}`,
+                  borderRadius: 6,
+                  padding: "7px 10px",
+                  fontSize: 12,
+                  color: "#e2e8f0",
+                  cursor: "grab",
+                  marginBottom: 6,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
               >
+                {cardOrderMode && <span style={{ color: "#a78bfa", fontSize: 13 }}>⋮⋮</span>}
                 <div style={{ width: 28, height: 40, background: "#1e293b", border: "1px solid #374151", borderRadius: 4, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, overflow: "hidden" }}>
                   {imageStore[def.imageDataId || def.defId] ? (
                     <img src={imageStore[def.imageDataId || def.defId]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -87,46 +168,52 @@ export function Sidebar({
         )}
         {sidebarTab === "chip" && (
           <div>
-            <button
-              onClick={onNewChipDef}
-              style={{ width: "100%", background: "#1d4ed8", border: "none", borderRadius: 6, padding: "7px 0", color: "#e2e8f0", cursor: "pointer", fontSize: 12, fontWeight: 600, marginBottom: 10 }}
-            >
-              ＋ 新規チップ作成
-            </button>
-            <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 6 }}>標準チップ</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-              {CHIP_DEFS.map((cd) => (
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              <button
+                onClick={onNewChipDef}
+                style={{ flex: 1, background: "#1d4ed8", border: "none", borderRadius: 6, padding: "7px 0", color: "#e2e8f0", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+              >
+                ＋ 新規チップ作成
+              </button>
+              <button onClick={() => setChipOrderMode((v) => !v)} style={toggleBtn(chipOrderMode)}>
+                {chipOrderMode ? "完了" : "並び替え"}
+              </button>
+            </div>
+            {chipOrderMode && <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 8 }}>ドラッグして順番を入れ替えられます</div>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {chipDefs.map((cd, idx) => (
                 <div
                   key={cd.defId}
                   draggable
                   title={cd.label}
-                  onDragStart={(e) => onDragStartChip(e, cd)}
-                  style={{ width: 42, height: 42, borderRadius: "50%", background: cd.color, border: "2px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", cursor: "grab", textShadow: "0 1px 2px rgba(0,0,0,0.6)", boxShadow: "0 2px 6px rgba(0,0,0,0.4)" }}
+                  onDragStart={(e) => onChipItemDragStart(e, cd, idx)}
+                  onDragOver={(e) => chipOrderMode && e.preventDefault()}
+                  onDrop={(e) => onChipItemDrop(e, idx)}
+                  onDoubleClick={(e) => !chipOrderMode && onDblClickChipDef(e, cd)}
+                  onContextMenu={(e) => !chipOrderMode && onCtxMenuChipDef(e, cd)}
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: "50%",
+                    background: cd.color,
+                    border: `2px solid ${chipOrderMode ? "#a78bfa" : "rgba(255,255,255,0.15)"}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "#fff",
+                    cursor: "grab",
+                    textShadow: "0 1px 2px rgba(0,0,0,0.6)",
+                    boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
+                  }}
                 >
                   {cd.label}
                 </div>
               ))}
             </div>
-            {chipDefs.length > 0 && (
-              <>
-                <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 6 }}>カスタムチップ（ダブルクリックで編集）</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {chipDefs.map((cd) => (
-                    <div
-                      key={cd.defId}
-                      draggable
-                      title={cd.label}
-                      onDragStart={(e) => onDragStartChip(e, cd)}
-                      onDoubleClick={(e) => onDblClickChipDef(e, cd)}
-                      onContextMenu={(e) => onCtxMenuChipDef(e, cd)}
-                      style={{ width: 42, height: 42, borderRadius: "50%", background: cd.color, border: "2px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", cursor: "grab", textShadow: "0 1px 2px rgba(0,0,0,0.6)", boxShadow: "0 2px 6px rgba(0,0,0,0.4)" }}
-                    >
-                      {cd.label}
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
+            {chipDefs.length === 0 && <div style={{ color: "#374151", fontSize: 11, textAlign: "center", paddingTop: 20 }}>チップがありません</div>}
+            {!chipOrderMode && <div style={{ fontSize: 10, color: "#6b7280", marginTop: 10 }}>ダブルクリックで編集、右クリックで削除できます</div>}
           </div>
         )}
         {sidebarTab === "other" &&

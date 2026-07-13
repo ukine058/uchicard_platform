@@ -3,6 +3,7 @@
 
 import { applyAction } from "../lib/gameLogic";
 import type { RoomState, ClientMessage, ServerMessage, Player } from "../lib/types";
+import { CHIP_DEFS } from "../lib/types";
 
 export interface Env {
   ROOM: DurableObjectNamespace;
@@ -14,7 +15,9 @@ function emptyState(): RoomState {
     mode: "edit",
     players: [],
     cardDefs: [],
-    chipDefs: [],
+    // 新規ルームのみ、組み込みチップ一式を初期値として持たせる。
+    // （既に保存済みのルームは、保存済みの内容が優先される＝この初期値では上書きされない）
+    chipDefs: [...CHIP_DEFS],
     objects: [],
     imageStore: {},
   };
@@ -35,7 +38,9 @@ export class RoomObject implements DurableObject {
     // Hibernation復帰時に前回の状態をblockConcurrencyWhileで復元
     this.state.blockConcurrencyWhile(async () => {
       const stored = await this.state.storage.get<RoomState>("room");
-      if (stored) this.room = stored;
+      // スキーマ移行対応: 新項目追加前に保存された古いデータには
+      // chipDefs 等が存在しないため、デフォルト値で不足分を補う。
+      if (stored) this.room = { ...emptyState(), ...stored };
     });
   }
 

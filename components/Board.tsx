@@ -20,7 +20,6 @@ import {
 } from "@/lib/gameLogic";
 import { saveRoomZip, loadRoomZip } from "@/lib/zip";
 import type { Action, Card, CardDef, Chip, ChipDef, Deck, GameObject, Hand } from "@/lib/types";
-import { CHIP_DEFS } from "@/lib/types";
 import { Sidebar } from "./Sidebar";
 import { ObjRender } from "./objects";
 import { PlayerDlg, CtxMenu, SbCtxMenu, EditDlg, CardDefDlg, ChipDefDlg, tb } from "./Dialogs";
@@ -485,6 +484,20 @@ export default function Board({ roomId }: { roomId: string }) {
     [chipDefs, dispatch]
   );
 
+  const reorderCardDefs = useCallback(
+    (next: CardDef[]) => {
+      dispatch({ kind: "setCardDefs", cardDefs: next });
+    },
+    [dispatch]
+  );
+
+  const reorderChipDefs = useCallback(
+    (next: ChipDef[]) => {
+      dispatch({ kind: "setChipDefs", chipDefs: next });
+    },
+    [dispatch]
+  );
+
   const doSave = useCallback(() => {
     saveRoomZip(room, roomId);
   }, [room, roomId]);
@@ -547,6 +560,8 @@ export default function Board({ roomId }: { roomId: string }) {
             e.stopPropagation();
             setSbCtxMenu({ x: e.clientX, y: e.clientY, kind: "chip", def });
           }}
+          onReorderCardDefs={reorderCardDefs}
+          onReorderChipDefs={reorderChipDefs}
           onDragStartOther={(e, type) => {
             e.dataTransfer.effectAllowed = "copy";
             setDraggingFromSidebar({ type, data: {} });
