@@ -1,0 +1,15 @@
+name = "cardgame-room-server"
+main = "worker/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "RoomObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomObject"]
+
+# デプロイ: wrangler deploy
+# ローカル確認: wrangler dev

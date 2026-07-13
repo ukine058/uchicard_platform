@@ -1,0 +1,318 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { CardDef, GameObject, Player } from "@/lib/types";
+
+export const tb = (active = false): React.CSSProperties => ({
+  background: active ? "#21262d" : "transparent",
+  border: "1px solid #30363d",
+  borderRadius: 6,
+  padding: "4px 12px",
+  color: active ? "#e2e8f0" : "#8b949e",
+  cursor: "pointer",
+  fontSize: 12,
+  transition: "background 0.12s",
+});
+
+// ── プレイヤーダイアログ ────────────────────────────────────
+export function PlayerDlg({
+  players,
+  myId,
+  onSelectMe,
+  onUpdateName,
+  onAddPlayer,
+  onClose,
+}: {
+  players: Player[];
+  myId: string;
+  onSelectMe: (id: string) => void;
+  onUpdateName: (id: string, name: string) => void;
+  onAddPlayer: () => void;
+  onClose: () => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 4000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 14, padding: 28, minWidth: 340, boxShadow: "0 8px 40px rgba(0,0,0,0.8)" }}>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, color: "#e2e8f0" }}>👥 プレイヤー確認</div>
+        <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 20 }}>自分のプレイヤーを選択してください</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+          {players.map((pl) => (
+            <div
+              key={pl.id}
+              onClick={() => onSelectMe(pl.id)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                background: myId === pl.id ? "#1e3a5f" : "#21262d",
+                border: `1px solid ${myId === pl.id ? "#3b82f6" : "#30363d"}`,
+                borderRadius: 8,
+                padding: "8px 12px",
+                cursor: "pointer",
+              }}
+            >
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  background: myId === pl.id ? "#1d4ed8" : "#374151",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 13,
+                  flexShrink: 0,
+                }}
+              >
+                {myId === pl.id ? "✓" : "👤"}
+              </div>
+              {editingId === pl.id ? (
+                <input
+                  autoFocus
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onBlur={() => {
+                    onUpdateName(pl.id, editName || pl.name);
+                    setEditingId(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      onUpdateName(pl.id, editName || pl.name);
+                      setEditingId(null);
+                    }
+                  }}
+                  style={{ flex: 1, background: "#0d1117", border: "1px solid #3b82f6", borderRadius: 4, padding: "2px 8px", color: "#e2e8f0", fontSize: 13 }}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span style={{ flex: 1, fontSize: 13, color: "#e2e8f0" }}>{pl.name}</span>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingId(pl.id);
+                  setEditName(pl.name);
+                }}
+                style={{ background: "transparent", border: "1px solid #374151", borderRadius: 4, padding: "2px 8px", color: "#8b949e", cursor: "pointer", fontSize: 11 }}
+              >
+                編集
+              </button>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
+          <button onClick={onAddPlayer} style={tb()}>
+            ＋ プレイヤー追加
+          </button>
+          <button onClick={onClose} style={{ ...tb(), background: "#1d4ed8", color: "#e2e8f0", borderColor: "#1d4ed8" }}>
+            決定
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 右クリックメニュー（盤面オブジェクト） ─────────────────
+export function CtxMenu({
+  menu,
+  onClose,
+  onEdit,
+  onDelete,
+  onDuplicate,
+}: {
+  menu: { x: number; y: number; obj: GameObject };
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onDuplicate: (() => void) | null;
+}) {
+  useEffect(() => {
+    const h = () => onClose();
+    window.addEventListener("click", h, { once: true });
+    return () => window.removeEventListener("click", h);
+  }, [onClose]);
+
+  const items: { l: string; a: () => void }[] = [];
+  if (["card", "deck", "counter"].includes(menu.obj.kind)) items.push({ l: "✏️ 編集", a: onEdit });
+  if (onDuplicate) items.push({ l: "📋 複製", a: onDuplicate });
+  items.push({ l: "🗑️ 削除", a: onDelete });
+
+  return (
+    <div style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 2000, background: "#161b22", border: "1px solid #30363d", borderRadius: 8, boxShadow: "0 4px 18px rgba(0,0,0,0.56)", overflow: "hidden", minWidth: 130 }}>
+      {items.map((it, i) => (
+        <div
+          key={i}
+          onClick={it.a}
+          style={{ padding: "9px 16px", fontSize: 13, cursor: "pointer", color: "#e2e8f0" }}
+          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "#21262d")}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
+        >
+          {it.l}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── 右クリックメニュー（サイドバーのカード定義） ───────────
+export function SbCtxMenu({
+  menu,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  menu: { x: number; y: number; def: CardDef };
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  useEffect(() => {
+    const h = () => onClose();
+    window.addEventListener("click", h, { once: true });
+    return () => window.removeEventListener("click", h);
+  }, [onClose]);
+
+  return (
+    <div style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 2000, background: "#161b22", border: "1px solid #30363d", borderRadius: 8, boxShadow: "0 4px 18px rgba(0,0,0,0.56)", overflow: "hidden", minWidth: 130 }}>
+      {[{ l: "✏️ 編集", a: onEdit }, { l: "🗑️ 削除", a: onDelete }].map((it, i) => (
+        <div
+          key={i}
+          onClick={it.a}
+          style={{ padding: "9px 16px", fontSize: 13, cursor: "pointer", color: "#e2e8f0" }}
+          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "#21262d")}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
+        >
+          {it.l}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── 編集ダイアログ（カード内容 / エリア名 等） ─────────────
+export function EditDlg({
+  target,
+  onClose,
+  onSave,
+}: {
+  target: GameObject;
+  onClose: () => void;
+  onSave: (patch: Record<string, any>) => void;
+}) {
+  const isCard = target.kind === "card";
+  const [text, setText] = useState(isCard ? (target as any).text : (target as any).name);
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 12, padding: 24, minWidth: 300 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: "#8b949e" }}>{isCard ? "カード内容" : "名前"}を編集</div>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          style={{ width: "100%", minHeight: 80, background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, padding: 8, color: "#e2e8f0", fontSize: 13, resize: "vertical", boxSizing: "border-box" }}
+        />
+        <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={tb()}>
+            キャンセル
+          </button>
+          <button onClick={() => onSave(isCard ? { text } : { name: text })} style={{ ...tb(), background: "#1d4ed8", color: "#e2e8f0", borderColor: "#1d4ed8" }}>
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── カード定義ダイアログ（画像ファイル選択対応） ───────────
+export function CardDefDlg({
+  mode,
+  def,
+  imageStore,
+  storeImage,
+  onClose,
+  onSave,
+  newImageDataId,
+}: {
+  mode: "new" | "edit";
+  def?: CardDef;
+  imageStore: Record<string, string>;
+  storeImage: (id: string, base64: string) => void;
+  onClose: () => void;
+  onSave: (patch: { text: string; imageDataId: string | null }) => void;
+  newImageDataId: string;
+}) {
+  const [inputType, setInputType] = useState<"text" | "image">(def?.imageDataId ? "image" : "text");
+  const [text, setText] = useState(def?.text || "");
+  const [previewUrl, setPreviewUrl] = useState(def?.imageDataId ? imageStore[def.imageDataId] || "" : "");
+  const imageDataId = def?.defId || newImageDataId;
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const b64 = ev.target?.result as string;
+      setPreviewUrl(b64);
+      storeImage(imageDataId, b64);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const save = () => {
+    if (inputType === "text") onSave({ text, imageDataId: null });
+    else onSave({ text, imageDataId: previewUrl ? imageDataId : null });
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 5000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 14, padding: 28, minWidth: 340, maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.8)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: "#e2e8f0" }}>{mode === "new" ? "カードを新規作成" : "カードを編集"}</div>
+        <div style={{ display: "flex", gap: 0, marginBottom: 16, border: "1px solid #30363d", borderRadius: 6, overflow: "hidden" }}>
+          <button
+            onClick={() => setInputType("text")}
+            style={{ flex: 1, background: inputType === "text" ? "#1d4ed8" : "transparent", border: "none", padding: "7px 0", color: inputType === "text" ? "#e2e8f0" : "#8b949e", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+          >
+            テキスト
+          </button>
+          <button
+            onClick={() => setInputType("image")}
+            style={{ flex: 1, background: inputType === "image" ? "#1d4ed8" : "transparent", border: "none", padding: "7px 0", color: inputType === "image" ? "#e2e8f0" : "#8b949e", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+          >
+            画像
+          </button>
+        </div>
+        <div style={{ marginBottom: 8, fontSize: 11, color: "#8b949e" }}>カード名・テキスト</div>
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="カード名やテキストを入力"
+          style={{ width: "100%", background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, padding: "8px 10px", color: "#e2e8f0", fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}
+        />
+        {inputType === "image" && (
+          <div>
+            <button
+              onClick={() => fileRef.current?.click()}
+              style={{ width: "100%", background: "#21262d", border: "1px solid #30363d", borderRadius: 6, padding: "8px 0", color: "#94a3b8", cursor: "pointer", fontSize: 12, marginBottom: 10 }}
+            >
+              📁 画像ファイルを選択
+            </button>
+            <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
+            {previewUrl && <img src={previewUrl} alt="" style={{ width: "100%", maxHeight: 120, objectFit: "contain", borderRadius: 6, marginBottom: 10, border: "1px solid #30363d" }} />}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+          <button onClick={onClose} style={tb()}>
+            キャンセル
+          </button>
+          <button onClick={save} style={{ ...tb(), background: "#1d4ed8", color: "#e2e8f0", borderColor: "#1d4ed8" }}>
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
