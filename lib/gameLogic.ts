@@ -140,6 +140,7 @@ export const mkDeck = (x: number, y: number) => ({
   y,
   w: 110,
   h: 150,
+  rotation: 0,
   name: "山札",
 });
 
@@ -159,6 +160,7 @@ export const mkCounter = (x: number, y: number) => ({
   kind: "counter" as const,
   x,
   y,
+  rotation: 0,
   name: "ライフ",
   value: 20,
 });

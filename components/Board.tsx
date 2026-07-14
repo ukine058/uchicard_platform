@@ -53,6 +53,7 @@ export default function Board({ roomId }: { roomId: string }) {
   const [sidebarTab, setSidebarTab] = useState<"card" | "chip" | "other">("card");
   const [camRot, setCamRot] = useState(0);
   const [camOffset, setCamOffset] = useState({ x: 0, y: 0 });
+  const [camZoom, setCamZoom] = useState(1);
   const [showPlayerDlg, setShowPlayerDlg] = useState(true);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; obj: GameObject } | null>(null);
   const [sbCtxMenu, setSbCtxMenu] = useState<{ x: number; y: number; kind: "card" | "chip"; def: CardDef | ChipDef } | null>(null);
@@ -78,11 +79,12 @@ export default function Board({ roomId }: { roomId: string }) {
 
   const boardRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ id: string; kind: string; isHandle: boolean; dd?: string; burrow?: boolean } | null>(null);
+  const drag = useRef<{ id: string; kind: string; isHandle: boolean; dd?: string; burrow?: boolean; rotate?: boolean } | null>(null);
   const rotDrag = useRef<{ startAngle: number; startMouseAngle: number } | null>(null);
   const panDrag = useRef<{ active: boolean } | null>(null);
   const camRotRef = useRef(camRot);
   const camOffRef = useRef(camOffset);
+  const camZoomRef = useRef(camZoom);
   const objRef = useRef<GameObject[]>(objects);
 
   useEffect(() => {
@@ -91,6 +93,9 @@ export default function Board({ roomId }: { roomId: string }) {
   useEffect(() => {
     camOffRef.current = camOffset;
   }, [camOffset]);
+  useEffect(() => {
+    camZoomRef.current = camZoom;
+  }, [camZoom]);
   useEffect(() => {
     objRef.current = objects;
   }, [objects]);
@@ -129,8 +134,8 @@ export default function Board({ roomId }: { roomId: string }) {
     const r = (-camRotRef.current * Math.PI) / 180;
     const cos = Math.cos(r),
       sin = Math.sin(r);
-    const rx = dx * cos - dy * sin,
-      ry = dx * sin + dy * cos;
+    const rx = (dx * cos - dy * sin) / camZoomRef.current,
+      ry = (dx * sin + dy * cos) / camZoomRef.current;
     return { bx: cx - rect.left + rx - camOffRef.current.x, by: cy - rect.top + ry - camOffRef.current.y };
   }, []);
 
@@ -140,13 +145,28 @@ export default function Board({ roomId }: { roomId: string }) {
     return cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
   }, []);
 
+  // マウスホイール（トラックパッドのピンチ操作含む）でカメラのズームを行う。
+  // React の onWheel はデフォルトで passive のため preventDefault が効かず、
+  // ネイティブの addEventListener で { passive: false } を指定する。
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+      setCamZoom((z) => Math.min(3, Math.max(0.3, z * factor)));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   // ── グローバルマウスイベント ───────────────────────────────
   useEffect(() => {
     const d2b = (mdx: number, mdy: number) => {
-      const r = (-camRotRef.current * Math.PI) / 180;
+      const r = (camRotRef.current * Math.PI) / 180;
       const cos = Math.cos(r),
         sin = Math.sin(r);
-      return { dx: mdx * cos - mdy * sin, dy: mdx * sin + mdy * cos };
+      return { dx: (mdx * cos - mdy * sin) / camZoomRef.current, dy: (mdx * sin + mdy * cos) / camZoomRef.current };
     };
 
     const onMove = (e: MouseEvent) => {
@@ -154,7 +174,11 @@ export default function Board({ roomId }: { roomId: string }) {
         const r = (camRotRef.current * Math.PI) / 180;
         const cos = Math.cos(r),
           sin = Math.sin(r);
-        setCamOffset((p) => ({ x: p.x + e.movementX * cos + e.movementY * sin, y: p.y - e.movementX * sin + e.movementY * cos }));
+        const z = camZoomRef.current;
+        setCamOffset((p) => ({
+          x: p.x + (e.movementX * cos + e.movementY * sin) / z,
+          y: p.y + (-e.movementX * sin + e.movementY * cos) / z,
+        }));
         return;
       }
       if (rotDrag.current) {
@@ -168,21 +192,25 @@ export default function Board({ roomId }: { roomId: string }) {
       if (!drag.current) return;
       const { id, kind, isHandle, dd, burrow } = drag.current;
 
-      // カード回転ハンドル
-      if (isHandle && kind === "card") {
-        const rect = boardRef.current!.getBoundingClientRect();
-        const cx = rect.left + rect.width / 2,
-          cy = rect.top + rect.height / 2;
-        const r = (-camRotRef.current * Math.PI) / 180;
-        const cos = Math.cos(r),
-          sin = Math.sin(r);
-        const mx = e.clientX - cx,
-          my = e.clientY - cy;
-        const bx = cx - rect.left + mx * cos - my * sin - camOffRef.current.x;
-        const by = cy - rect.top + mx * sin + my * cos - camOffRef.current.y;
-        const target = objRef.current.find((o) => o.id === id) as Card | undefined;
+      // 回転ハンドル（カード・山札・カウンター共通）
+      if (isHandle && drag.current.rotate) {
+        const { bx, by } = s2b(e.clientX, e.clientY);
+        const target = objRef.current.find((o) => o.id === id);
         if (!target) return;
-        const angle = (Math.atan2(by - target.y, bx - (target.x + 45)) * 180) / Math.PI + 90;
+        let centerX: number, centerY: number;
+        if (kind === "card") {
+          centerX = target.x + 45;
+          centerY = target.y + 63;
+        } else if (kind === "deck") {
+          const d = target as Deck;
+          centerX = d.x + d.w / 2;
+          centerY = d.y + d.h / 2;
+        } else {
+          // カウンターは固定サイズの目安中心を使う（内容に応じた自動サイズのため）
+          centerX = target.x + 50;
+          centerY = target.y + 55;
+        }
+        const angle = (Math.atan2(by - centerY, bx - centerX) * 180) / Math.PI + 90;
         const next = objRef.current.map((o) => (o.id === id ? { ...o, rotation: angle } : o));
         applyObjectsLocally(next);
         scheduleSend({ kind: "updateObj", id, patch: { rotation: angle } });
@@ -680,7 +708,7 @@ export default function Board({ roomId }: { roomId: string }) {
               👤 {myName}
             </button>
             <span style={{ fontSize: 11, color: "#8b949e" }}>
-              左D:移動 右D:回転({Math.round(((camRot % 360) + 360) % 360)}°)
+              左D:移動 右D:回転({Math.round(((camRot % 360) + 360) % 360)}°) ホイール:ズーム({Math.round(camZoom * 100)}%)
             </span>
           </div>
         </div>
@@ -694,7 +722,7 @@ export default function Board({ roomId }: { roomId: string }) {
           onDragOver={(e) => e.preventDefault()}
           onDrop={onBoardDrop}
         >
-          <div style={{ position: "absolute", inset: 0, transform: `rotate(${camRot}deg)`, transformOrigin: "center center", pointerEvents: "none" }}>
+          <div style={{ position: "absolute", inset: 0, transform: `rotate(${camRot}deg) scale(${camZoom})`, transformOrigin: "center center", pointerEvents: "none" }}>
             <div style={{ position: "absolute", inset: 0, transform: `translate(${camOffset.x}px,${camOffset.y}px)`, pointerEvents: "none" }}>
               <div style={{ position: "absolute", inset: "-200%", backgroundImage: "radial-gradient(circle,#21262d 1px,transparent 1px)", backgroundSize: "40px 40px", opacity: 0.5, pointerEvents: "none" }} />
               {sortedObjs.map((obj) => (
@@ -863,6 +891,7 @@ export default function Board({ roomId }: { roomId: string }) {
                   nd.name = d.name;
                   nd.w = d.w;
                   nd.h = d.h;
+                  nd.rotation = d.rotation || 0;
                   const newCards = cards.map((c, i) => ({
                     ...mkCardFromDef({ text: c.text, imageDataId: c.imageDataId, defId: c.defId || undefined }, c.x + 20, c.y + 20, i),
                     ownArea: { kind: "deck" as const, id: nd.id },
