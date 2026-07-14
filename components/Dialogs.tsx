@@ -19,89 +19,138 @@ export const tb = (active = false): React.CSSProperties => ({
 export function PlayerDlg({
   players,
   myId,
+  connectedIds,
   onSelectMe,
   onUpdateName,
+  onUpdateColor,
   onAddPlayer,
+  onDeletePlayer,
   onClose,
 }: {
   players: Player[];
   myId: string;
+  connectedIds: string[];
   onSelectMe: (id: string) => void;
   onUpdateName: (id: string, name: string) => void;
+  onUpdateColor: (id: string, color: string) => void;
   onAddPlayer: () => void;
+  onDeletePlayer: (id: string) => void;
   onClose: () => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+
+  const isConnected = (id: string) => connectedIds.includes(id) && id !== myId;
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 4000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 14, padding: 28, minWidth: 340, boxShadow: "0 8px 40px rgba(0,0,0,0.8)" }}>
+      <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 14, padding: 28, minWidth: 360, boxShadow: "0 8px 40px rgba(0,0,0,0.8)" }}>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, color: "#e2e8f0" }}>👥 プレイヤー確認</div>
-        <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 20 }}>自分のプレイヤーを選択してください</div>
+        <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 20 }}>
+          自分のプレイヤーを選択してください（🟢=接続中は選択不可）
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-          {players.map((pl) => (
-            <div
-              key={pl.id}
-              onClick={() => onSelectMe(pl.id)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                background: myId === pl.id ? "#1e3a5f" : "#21262d",
-                border: `1px solid ${myId === pl.id ? "#3b82f6" : "#30363d"}`,
-                borderRadius: 8,
-                padding: "8px 12px",
-                cursor: "pointer",
-              }}
-            >
+          {players.map((pl) => {
+            const connectedByOther = isConnected(pl.id);
+            const isMe = myId === pl.id;
+            const selectable = !connectedByOther && !isMe;
+            return (
               <div
+                key={pl.id}
+                onClick={() => selectable && onSelectMe(pl.id)}
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "50%",
-                  background: myId === pl.id ? "#1d4ed8" : "#374151",
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 13,
-                  flexShrink: 0,
+                  gap: 10,
+                  background: isMe ? "#1e3a5f" : "#21262d",
+                  border: `1px solid ${isMe ? "#3b82f6" : "#30363d"}`,
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  cursor: selectable ? "pointer" : "default",
+                  opacity: connectedByOther ? 0.6 : 1,
                 }}
               >
-                {myId === pl.id ? "✓" : "👤"}
-              </div>
-              {editingId === pl.id ? (
-                <input
-                  autoFocus
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  onBlur={() => {
-                    onUpdateName(pl.id, editName || pl.name);
-                    setEditingId(null);
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: "50%",
+                    background: pl.color || "#374151",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 13,
+                    flexShrink: 0,
+                    border: "2px solid rgba(255,255,255,0.2)",
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
+                >
+                  {isMe ? "✓" : ""}
+                </div>
+
+                {isMe && editingId === pl.id ? (
+                  <input
+                    autoFocus
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onBlur={() => {
                       onUpdateName(pl.id, editName || pl.name);
                       setEditingId(null);
-                    }
-                  }}
-                  style={{ flex: 1, background: "#0d1117", border: "1px solid #3b82f6", borderRadius: 4, padding: "2px 8px", color: "#e2e8f0", fontSize: 13 }}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              ) : (
-                <span style={{ flex: 1, fontSize: 13, color: "#e2e8f0" }}>{pl.name}</span>
-              )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditingId(pl.id);
-                  setEditName(pl.name);
-                }}
-                style={{ background: "transparent", border: "1px solid #374151", borderRadius: 4, padding: "2px 8px", color: "#8b949e", cursor: "pointer", fontSize: 11 }}
-              >
-                編集
-              </button>
-            </div>
-          ))}
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        onUpdateName(pl.id, editName || pl.name);
+                        setEditingId(null);
+                      }
+                    }}
+                    style={{ flex: 1, background: "#0d1117", border: "1px solid #3b82f6", borderRadius: 4, padding: "2px 8px", color: "#e2e8f0", fontSize: 13 }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <span style={{ flex: 1, fontSize: 13, color: "#e2e8f0" }}>{pl.name}</span>
+                )}
+
+                <span style={{ fontSize: 11, flexShrink: 0 }} title={connectedByOther || isMe ? "接続中" : "未接続"}>
+                  {connectedByOther || isMe ? "🟢" : "⚪"}
+                </span>
+
+                {isMe && (
+                  <>
+                    <input
+                      type="color"
+                      value={pl.color || "#4ade80"}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => onUpdateColor(pl.id, e.target.value)}
+                      style={{ width: 26, height: 26, border: "1px solid #30363d", borderRadius: 4, background: "none", cursor: "pointer", padding: 0, flexShrink: 0 }}
+                      title="自分の色"
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingId(pl.id);
+                        setEditName(pl.name);
+                      }}
+                      style={{ background: "transparent", border: "1px solid #374151", borderRadius: 4, padding: "2px 8px", color: "#8b949e", cursor: "pointer", fontSize: 11, flexShrink: 0 }}
+                    >
+                      編集
+                    </button>
+                  </>
+                )}
+
+                {!isMe && !connectedByOther && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeletePlayer(pl.id);
+                    }}
+                    style={{ background: "transparent", border: "1px solid #7f1d1d", borderRadius: 4, padding: "2px 8px", color: "#f87171", cursor: "pointer", fontSize: 11, flexShrink: 0 }}
+                    title="このプレイヤーを削除"
+                  >
+                    削除
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
         <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
           <button onClick={onAddPlayer} style={tb()}>

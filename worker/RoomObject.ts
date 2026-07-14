@@ -2,8 +2,8 @@
 // WebSocket Hibernation API を使用してアイドル中の課金を抑える。
 
 import { applyAction } from "../lib/gameLogic";
-import type { RoomState, ClientMessage, ServerMessage, Player } from "../lib/types";
-import { CHIP_DEFS } from "../lib/types";
+import type { RoomState, ClientMessage, ServerMessage } from "../lib/types";
+import { CHIP_DEFS, pickPlayerColor } from "../lib/types";
 
 export interface Env {
   ROOM: DurableObjectNamespace;
@@ -72,20 +72,35 @@ export class RoomObject implements DurableObject {
       const meta: ConnMeta = { playerId: msg.playerId };
       ws.serializeAttachment(meta);
 
-      // 初参加なら players に追加。オーナー未設定なら最初の参加者をオーナーに。
-      if (!this.room.players.find((p) => p.id === msg.playerId)) {
-        this.room.players = [...this.room.players, { id: msg.playerId, name: msg.playerName }];
-      } else {
-        this.room.players = this.room.players.map((p) =>
-          p.id === msg.playerId ? { ...p, name: msg.playerName } : p
-        );
+      // プレイヤーロスターは接続状態とは独立して永続化する（切断してもロスターからは消えない）。
+      // 既に存在するプレイヤーIDへの参加（＝プレイヤーの選び直し）の場合、
+      // 既存の名前・色を上書きしない。
+      const existing = this.room.players.find((p) => p.id === msg.playerId);
+      if (!existing) {
+        this.room.players = [
+          ...this.room.players,
+          { id: msg.playerId, name: msg.playerName, color: pickPlayerColor(msg.playerId) },
+        ];
       }
       if (!this.room.ownerId) this.room.ownerId = msg.playerId;
       await this.persist();
 
-      const init: ServerMessage = { type: "init", state: this.room, selfId: msg.playerId };
+      const init: ServerMessage = {
+        type: "init",
+        state: this.room,
+        selfId: msg.playerId,
+        connectedIds: this.getConnectedPlayerIds(),
+      };
       ws.send(JSON.stringify(init));
       this.broadcastPlayers();
+      return;
+    }
+
+    if (msg.type === "cursor") {
+      const meta = ws.deserializeAttachment() as ConnMeta | null;
+      if (!meta) return;
+      // カーソル位置は状態に保存しない一時的な中継のみ（プレゼンス表示用）
+      this.broadcast({ type: "cursor", playerId: meta.playerId, x: msg.x, y: msg.y }, ws);
       return;
     }
 
@@ -110,15 +125,12 @@ export class RoomObject implements DurableObject {
 
   async webSocketClose(ws: WebSocket) {
     const meta = ws.deserializeAttachment() as ConnMeta | null;
-    if (!meta) return;
-    // 他に同一プレイヤーの接続が残っていなければ players から外す
-    const stillConnected = this.state
-      .getWebSockets()
-      .some((s) => s !== ws && (s.deserializeAttachment() as ConnMeta | null)?.playerId === meta.playerId);
-    if (!stillConnected) {
-      this.room.players = this.room.players.filter((p) => p.id !== meta.playerId);
+    if (meta) {
+      // プレイヤーロスターからは削除しない（切断中でも選択・削除の対象として残す）。
+      // オーナーだった場合のみ、他に接続中のプレイヤーへ委譲する。
       if (this.room.ownerId === meta.playerId) {
-        this.room.ownerId = this.room.players[0]?.id ?? null;
+        const stillConnected = this.getConnectedPlayerIds(ws);
+        this.room.ownerId = stillConnected[0] ?? null;
       }
       await this.persist();
       this.broadcastPlayers();
@@ -148,7 +160,19 @@ export class RoomObject implements DurableObject {
   }
 
   private broadcastPlayers() {
-    this.broadcast({ type: "players", players: this.room.players });
+    this.broadcast({ type: "players", players: this.room.players, connectedIds: this.getConnectedPlayerIds() });
+  }
+
+  // 現在ライブなWebSocket接続にひもづくプレイヤーIDの一覧（重複除去）。
+  // exclude を渡すとそのソケット自身は除外して数える（close処理での再計算用）。
+  private getConnectedPlayerIds(exclude?: WebSocket): string[] {
+    const ids = new Set<string>();
+    for (const ws of this.state.getWebSockets()) {
+      if (ws === exclude) continue;
+      const meta = ws.deserializeAttachment() as ConnMeta | null;
+      if (meta?.playerId) ids.add(meta.playerId);
+    }
+    return [...ids];
   }
 
   private async persist() {

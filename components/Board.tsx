@@ -21,6 +21,7 @@ import {
 } from "@/lib/gameLogic";
 import { saveRoomZip, loadRoomZip } from "@/lib/zip";
 import type { Action, Card, CardDef, Chip, ChipDef, Deck, GameObject, Hand } from "@/lib/types";
+import { pickPlayerColor } from "@/lib/types";
 import { Sidebar } from "./Sidebar";
 import { ObjRender } from "./objects";
 import { PlayerDlg, CtxMenu, SbCtxMenu, EditDlg, CardDefDlg, ChipDefDlg, tb } from "./Dialogs";
@@ -30,7 +31,21 @@ function kindZOf(kind: GameObject["kind"]) {
 }
 
 export default function Board({ roomId }: { roomId: string }) {
-  const { connected, room, myId, myName, setMyName, dispatch, applyLocal, send } = useRoomSocket(roomId);
+  const {
+    connected,
+    room,
+    myId,
+    myName,
+    setMyName,
+    setMyColor,
+    assumeIdentity,
+    connectedIds,
+    cursors,
+    sendCursor,
+    dispatch,
+    applyLocal,
+    send,
+  } = useRoomSocket(roomId);
   const { objects, cardDefs, chipDefs, imageStore, players, mode, ownerId } = room;
   const isOwner = ownerId === myId;
 
@@ -342,6 +357,24 @@ export default function Board({ roomId }: { roomId: string }) {
       if (e.button === 0) panDrag.current = { active: true };
     },
     [camRot]
+  );
+
+  // カーソル位置の共有はゲーム状態に影響しないため、1フレームに1回だけ送信する
+  const cursorSendRafRef = useRef(false);
+  const pendingCursorRef = useRef<{ x: number; y: number } | null>(null);
+  const onBoardMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      const { bx, by } = s2b(e.clientX, e.clientY);
+      pendingCursorRef.current = { x: bx, y: by };
+      if (!cursorSendRafRef.current) {
+        cursorSendRafRef.current = true;
+        requestAnimationFrame(() => {
+          cursorSendRafRef.current = false;
+          if (pendingCursorRef.current) sendCursor(pendingCursorRef.current.x, pendingCursorRef.current.y);
+        });
+      }
+    },
+    [s2b, sendCursor]
   );
 
   const startDrag = useCallback(
@@ -656,6 +689,7 @@ export default function Board({ roomId }: { roomId: string }) {
           ref={boardRef}
           style={{ flex: 1, overflow: "hidden", position: "relative", cursor: "crosshair" }}
           onMouseDown={onBoardDown}
+          onMouseMove={onBoardMouseMove}
           onContextMenu={(e) => e.preventDefault()}
           onDragOver={(e) => e.preventDefault()}
           onDrop={onBoardDrop}
@@ -682,6 +716,40 @@ export default function Board({ roomId }: { roomId: string }) {
                   burrowId={burrowId}
                 />
               ))}
+              {Object.entries(cursors)
+                .filter(([pid]) => pid !== myId)
+                .map(([pid, pos]) => {
+                  const pl = players.find((p) => p.id === pid);
+                  if (!pl) return null;
+                  return (
+                    <div
+                      key={pid}
+                      style={{
+                        position: "absolute",
+                        left: pos.x,
+                        top: pos.y,
+                        transform: "translate(-2px, -2px)",
+                        pointerEvents: "none",
+                        zIndex: 9998,
+                      }}
+                    >
+                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: pl.color || "#60a5fa", border: "2px solid #fff", boxShadow: "0 0 4px rgba(0,0,0,0.6)" }} />
+                      <div
+                        style={{
+                          marginTop: 2,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: pl.color || "#60a5fa",
+                          whiteSpace: "nowrap",
+                          WebkitTextStroke: "3px white",
+                          paintOrder: "stroke fill",
+                        } as React.CSSProperties}
+                      >
+                        {pl.name}
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </div>
 
@@ -752,14 +820,23 @@ export default function Board({ roomId }: { roomId: string }) {
         <PlayerDlg
           players={players}
           myId={myId}
-          onSelectMe={() => {}}
+          connectedIds={connectedIds}
+          onSelectMe={(id) => assumeIdentity(id)}
           onUpdateName={(id, name) => {
             if (id === myId) setMyName(name);
-            else dispatch({ kind: "setPlayers", players: players.map((p) => (p.id === id ? { ...p, name } : p)) });
+          }}
+          onUpdateColor={(id, color) => {
+            if (id === myId) setMyColor(color);
           }}
           onAddPlayer={() => {
             const id = `player_${Math.random().toString(36).slice(2, 9)}`;
-            dispatch({ kind: "setPlayers", players: [...players, { id, name: `プレイヤー${players.length + 1}` }] });
+            dispatch({
+              kind: "setPlayers",
+              players: [...players, { id, name: `プレイヤー${players.length + 1}`, color: pickPlayerColor(id) }],
+            });
+          }}
+          onDeletePlayer={(id) => {
+            dispatch({ kind: "setPlayers", players: players.filter((p) => p.id !== id) });
           }}
           onClose={() => setShowPlayerDlg(false)}
         />

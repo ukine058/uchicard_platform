@@ -1,6 +1,17 @@
 // ── 共有型定義（クライアント / Durable Object 共通） ──────────────
 
-export type Player = { id: string; name: string };
+export type Player = { id: string; name: string; color: string };
+
+export const PLAYER_COLOR_PALETTE = [
+  "#f87171", "#fb923c", "#facc15", "#4ade80", "#34d399",
+  "#22d3ee", "#60a5fa", "#818cf8", "#a78bfa", "#e879f9", "#fb7185",
+];
+
+export function pickPlayerColor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return PLAYER_COLOR_PALETTE[h % PLAYER_COLOR_PALETTE.length];
+}
 
 export type CardDef = {
   defId: string;
@@ -116,12 +127,14 @@ export type Action =
 
 export type ClientMessage =
   | { type: "join"; playerId: string; playerName: string }
-  | { type: "action"; payload: Action };
+  | { type: "action"; payload: Action }
+  | { type: "cursor"; x: number; y: number };
 
 export type ServerMessage =
-  | { type: "init"; state: RoomState; selfId: string }
+  | { type: "init"; state: RoomState; selfId: string; connectedIds: string[] }
   | { type: "action"; payload: Action; from: string }
-  | { type: "players"; players: Player[] };
+  | { type: "players"; players: Player[]; connectedIds: string[] }
+  | { type: "cursor"; playerId: string; x: number; y: number };
 
 // 組み込みのチップ定義（常に候補として表示される。編集・削除不可）
 export const CHIP_DEFS: ChipDef[] = [

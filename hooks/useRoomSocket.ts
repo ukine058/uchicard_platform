@@ -31,11 +31,15 @@ function getOrCreateMyName(id: string): string {
   return name;
 }
 
+export type CursorInfo = { x: number; y: number };
+
 export function useRoomSocket(roomId: string) {
   const [connected, setConnected] = useState(false);
   const [room, setRoom] = useState<RoomState>(emptyState());
-  const [myId] = useState<string>(() => getOrCreateMyId());
+  const [myId, setMyId] = useState<string>(() => getOrCreateMyId());
   const [myName, setMyNameState] = useState<string>(() => getOrCreateMyName(myId));
+  const [connectedIds, setConnectedIds] = useState<string[]>([]);
+  const [cursors, setCursors] = useState<Record<string, CursorInfo>>({});
 
   const wsRef = useRef<WebSocket | null>(null);
   const roomRef = useRef(room);
@@ -62,10 +66,21 @@ export function useRoomSocket(roomId: string) {
       if (msg.type === "init") {
         // 古いスキーマの状態が送られてきても不足項目で落ちないようデフォルトとマージ
         setRoom({ ...emptyState(), ...msg.state });
+        setConnectedIds(msg.connectedIds);
       } else if (msg.type === "action") {
         setRoom((p) => applyAction(p, msg.payload));
       } else if (msg.type === "players") {
         setRoom((p) => ({ ...p, players: msg.players }));
+        setConnectedIds(msg.connectedIds);
+        // 退出したプレイヤーのカーソル表示は消す
+        setCursors((prev) => {
+          const ids = new Set(msg.players.map((p) => p.id));
+          const next: Record<string, CursorInfo> = {};
+          for (const [k, v] of Object.entries(prev)) if (ids.has(k)) next[k] = v;
+          return next;
+        });
+      } else if (msg.type === "cursor") {
+        setCursors((prev) => ({ ...prev, [msg.playerId]: { x: msg.x, y: msg.y } }));
       }
     };
 
@@ -98,6 +113,7 @@ export function useRoomSocket(roomId: string) {
     [applyLocal, send]
   );
 
+  // 自分の名前を変更（自分が現在選んでいるプレイヤーの名前を書き換える）
   const setMyName = useCallback(
     (name: string) => {
       setMyNameState(name);
@@ -108,5 +124,59 @@ export function useRoomSocket(roomId: string) {
     [dispatch, myId]
   );
 
-  return { connected, room, myId, myName, setMyName, dispatch, applyLocal, send };
+  // 自分の色を変更
+  const setMyColor = useCallback(
+    (color: string) => {
+      const players = roomRef.current.players.map((p: Player) => (p.id === myId ? { ...p, color } : p));
+      dispatch({ kind: "setPlayers", players });
+    },
+    [dispatch, myId]
+  );
+
+  // 別のプレイヤー（未接続のもの）を自分として選び直す。
+  // 同じWebSocket接続上で再度joinを送るだけで、サーバー側の紐付けが更新される。
+  const assumeIdentity = useCallback(
+    (targetId: string) => {
+      if (targetId === myId) return;
+      const target = roomRef.current.players.find((p) => p.id === targetId);
+      const nextName = target?.name || myName;
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("cardgame_myId", targetId);
+        sessionStorage.setItem("cardgame_myName", nextName);
+      }
+      setMyId(targetId);
+      setMyNameState(nextName);
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const joinMsg: ClientMessage = { type: "join", playerId: targetId, playerName: nextName };
+        ws.send(JSON.stringify(joinMsg));
+      }
+    },
+    [myId, myName]
+  );
+
+  // カーソル位置の共有（ゲーム状態には残らない一時的なプレゼンス情報）
+  const sendCursor = useCallback((x: number, y: number) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const msg: ClientMessage = { type: "cursor", x, y };
+      ws.send(JSON.stringify(msg));
+    }
+  }, []);
+
+  return {
+    connected,
+    room,
+    myId,
+    myName,
+    setMyName,
+    setMyColor,
+    assumeIdentity,
+    connectedIds,
+    cursors,
+    sendCursor,
+    dispatch,
+    applyLocal,
+    send,
+  };
 }
