@@ -22,9 +22,10 @@ export function ObjRender(props: {
   flashId: string | null;
   onHoverCard: (id: string | null) => void;
   onFlash: (id: string) => void;
+  burrowId: string | null;
 }) {
   const { obj } = props;
-  if (obj.kind === "card") return <CardObj {...props} obj={obj as Card} />;
+  if (obj.kind === "card") return <CardObj {...props} obj={obj as Card} isBurrowing={props.burrowId === obj.id} />;
   if (obj.kind === "chip") return <ChipObj obj={obj as Chip} startDrag={props.startDrag} />;
   if (obj.kind === "deck") return <DeckObj {...props} obj={obj as Deck} />;
   if (obj.kind === "hand") return <HandObj {...props} obj={obj as Hand} />;
@@ -46,6 +47,7 @@ export function CardObj({
   onHoverCard,
   onFlash,
   onToggleFace,
+  isBurrowing,
 }: {
   obj: Card;
   mode: "edit" | "play";
@@ -59,6 +61,7 @@ export function CardObj({
   onHoverCard: (id: string | null) => void;
   onFlash: (id: string) => void;
   onToggleFace: (id: string) => void;
+  isBurrowing: boolean;
 }) {
   const W = 90,
     H = 126;
@@ -88,10 +91,11 @@ export function CardObj({
         top: obj.y,
         width: W,
         height: H + 28,
-        transform: `rotate(${obj.rotation}deg)`,
+        transform: `rotate(${obj.rotation}deg)${isBurrowing ? " scale(0.88)" : ""}`,
         transformOrigin: `${W / 2}px ${H / 2}px`,
-        zIndex: 200 + (obj.zOrder || 0),
+        zIndex: isBurrowing ? 9999 : 200 + (obj.zOrder || 0),
         pointerEvents: "auto",
+        transition: "transform 0.15s",
       }}
       onMouseEnter={() => {
         onEnter();
@@ -133,21 +137,33 @@ export function CardObj({
 
       {/* カード本体 */}
       <div
-        onMouseDown={(e) => (isDraggable ? startDrag(e, obj.id, "card") : e.stopPropagation())}
+        onMouseDown={(e) => {
+          if (e.button === 2) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (isDraggable) startDrag(e, obj.id, "card", false, { burrow: true });
+            return;
+          }
+          if (isDraggable) startDrag(e, obj.id, "card");
+          else e.stopPropagation();
+        }}
         onDoubleClick={(e) => onDblClick(e, obj)}
         onContextMenu={(e) => onCtxMenu(e, obj)}
         style={{
           width: W,
           height: H,
           background: showFace ? "linear-gradient(160deg,#1e2d3d,#111827)" : "linear-gradient(135deg,#1c2e4a,#0d1b2e)",
-          border: `2px solid ${isFlashing ? "#fbbf24" : hovered ? "#60a5fa" : isDraggable ? "#374151" : "#1e3a5f"}`,
+          border: `2px solid ${isBurrowing ? "#14532d" : isFlashing ? "#fbbf24" : hovered ? "#60a5fa" : isDraggable ? "#374151" : "#1e3a5f"}`,
           borderRadius: 8,
           cursor: isDraggable ? "grab" : "not-allowed",
-          boxShadow: isFlashing
+          boxShadow: isBurrowing
+            ? "0 0 24px 6px rgba(20,83,45,0.85), inset 0 0 30px rgba(0,0,0,0.6)"
+            : isFlashing
             ? "0 0 18px rgba(251,191,36,0.7)"
             : hovered
             ? "0 0 14px rgba(96,165,250,0.33)"
             : "0 3px 10px rgba(0,0,0,0.5)",
+          filter: isBurrowing ? "brightness(0.5) saturate(1.4)" : "none",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -156,10 +172,21 @@ export function CardObj({
           textAlign: "center",
           padding: 6,
           overflow: "hidden",
-          transition: "border-color 0.12s,box-shadow 0.12s",
+          transition: "border-color 0.12s,box-shadow 0.12s,filter 0.15s",
           position: "relative",
         }}
       >
+        {isBurrowing && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "radial-gradient(circle,rgba(20,83,45,0.35),rgba(0,0,0,0.55))",
+              pointerEvents: "none",
+              zIndex: 5,
+            }}
+          />
+        )}
         {showFace ? (
           imageStore[obj.imageDataId || obj.defId || ""] ? (
             <img

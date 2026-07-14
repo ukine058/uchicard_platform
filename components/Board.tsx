@@ -12,6 +12,7 @@ import {
   mkDeck,
   mkHand,
   nextZ,
+  prevZ,
   ptInArea,
   removeCardFromArea,
   resolveChipCollisions,
@@ -51,6 +52,8 @@ export default function Board({ roomId }: { roomId: string }) {
     | null
   >(null);
   const [flashId, setFlashId] = useState<string | null>(null);
+  const [burrowId, setBurrowId] = useState<string | null>(null);
+  const suppressCtxMenuRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const flash = useCallback((id: string) => {
@@ -60,7 +63,7 @@ export default function Board({ roomId }: { roomId: string }) {
 
   const boardRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ id: string; kind: string; isHandle: boolean; dd?: string } | null>(null);
+  const drag = useRef<{ id: string; kind: string; isHandle: boolean; dd?: string; burrow?: boolean } | null>(null);
   const rotDrag = useRef<{ startAngle: number; startMouseAngle: number } | null>(null);
   const panDrag = useRef<{ active: boolean } | null>(null);
   const camRotRef = useRef(camRot);
@@ -148,7 +151,7 @@ export default function Board({ roomId }: { roomId: string }) {
         return;
       }
       if (!drag.current) return;
-      const { id, kind, isHandle, dd } = drag.current;
+      const { id, kind, isHandle, dd, burrow } = drag.current;
 
       // カード回転ハンドル
       if (isHandle && kind === "card") {
@@ -204,7 +207,14 @@ export default function Board({ roomId }: { roomId: string }) {
 
       // 通常移動
       const { dx, dy } = d2b(e.movementX, e.movementY);
-      if (kind === "card") {
+      if (kind === "card" && burrow) {
+        // 潜り込みドラッグ中: チップは追従させず、カード本体のみ移動
+        suppressCtxMenuRef.current = true;
+        const next = objRef.current.map((o) => (o.id === id ? { ...o, x: o.x + dx, y: o.y + dy } : o));
+        applyObjectsLocally(next);
+        const c2 = next.find((o) => o.id === id)!;
+        scheduleSend({ kind: "moveObj", id, x: c2.x, y: c2.y });
+      } else if (kind === "card") {
         const next = moveCardWithChips(objRef.current, id, dx, dy);
         applyObjectsLocally(next);
         const card = next.find((o) => o.id === id) as Card;
@@ -240,12 +250,13 @@ export default function Board({ roomId }: { roomId: string }) {
             let next = removeCardFromArea(objs, d.id);
             const deck = objs.filter((o) => o.kind === "deck").find((a) => ptInArea(bx, by, a as Deck)) as Deck | undefined;
             if (deck) {
-              next = addCardToArea(next, d.id, deck.id, "deck");
+              // 潜り込みドラッグで山札に入れた場合は、カード束の一番下に入る
+              next = addCardToArea(next, d.id, deck.id, "deck", d.burrow ? "bottom" : "top");
             } else {
               const hand = objs.filter((o) => o.kind === "hand").find((a) => ptInArea(bx, by, a as Hand)) as Hand | undefined;
               if (hand) {
                 next = addCardToArea(next, d.id, hand.id, "hand");
-              } else {
+              } else if (!d.burrow) {
                 const updCard = next.find((o) => o.id === d.id) as Card | undefined;
                 if (updCard) {
                   const chips = next.filter((o) => o.kind === "chip" && (updCard.chipIds || []).includes(o.id)) as Chip[];
@@ -255,8 +266,15 @@ export default function Board({ roomId }: { roomId: string }) {
                 }
               }
             }
-            const maxZ = nextZ(next.filter((o) => o.kind === "card" && !(o as Card).ownArea), "card");
-            next = next.map((o) => (o.id === d.id ? { ...o, zOrder: maxZ } : o));
+            // エリアに入った場合は addCardToArea 内で既にZ順を決定済み。
+            // 開いた盤面に置かれた場合のみ、ここでZ順（潜り込みなら最背面）を決める。
+            const landedCard = next.find((o) => o.id === d.id) as Card | undefined;
+            if (landedCard && !landedCard.ownArea) {
+              const zOrder = d.burrow
+                ? prevZ(next.filter((o) => o.kind === "card" && !(o as Card).ownArea), "card")
+                : nextZ(next.filter((o) => o.kind === "card" && !(o as Card).ownArea), "card");
+              next = next.map((o) => (o.id === d.id ? { ...o, zOrder } : o));
+            }
             applyObjectsLocally(next);
             dispatch({ kind: "setObjects", objects: next });
           }
@@ -289,13 +307,26 @@ export default function Board({ roomId }: { roomId: string }) {
       rotDrag.current = null;
       drag.current = null;
       panDrag.current = null;
+      setBurrowId(null);
+    };
+
+    // 潜り込みドラッグ（右ドラッグ）の後に、ブラウザ標準のcontextmenuや
+    // カードの右クリックメニューが誤って開かないよう、捕捉フェーズで止める。
+    const onContextMenuCapture = (e: MouseEvent) => {
+      if (suppressCtxMenuRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        suppressCtxMenuRef.current = false;
+      }
     };
 
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("contextmenu", onContextMenuCapture, true);
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("contextmenu", onContextMenuCapture, true);
     };
   }, [s2b, isOverSidebar, applyObjectsLocally, scheduleSend, dispatch]);
 
@@ -315,11 +346,26 @@ export default function Board({ roomId }: { roomId: string }) {
 
   const startDrag = useCallback(
     (e: React.MouseEvent, id: string, kind: string, isHandle = false, opts: any = {}) => {
-      if (e.button !== 0) return;
+      if (opts.burrow) {
+        if (e.button !== 2) return;
+      } else if (e.button !== 0) {
+        return;
+      }
       e.stopPropagation();
       e.preventDefault();
       drag.current = { id, kind, isHandle, ...opts };
       panDrag.current = null;
+
+      if (opts.burrow && kind === "card") {
+        // 潜り込みドラッグ開始: 見た目を暗く沈めて表示し、乗っているチップは切り離す（追従させない）
+        setBurrowId(id);
+        const card = objRef.current.find((o) => o.id === id) as Card | undefined;
+        if (card && card.chipIds.length > 0) {
+          dispatch({ kind: "updateObj", id, patch: { chipIds: [] } });
+        }
+        return;
+      }
+
       if (!isHandle && (kind === "card" || kind === "chip")) {
         const maxZ = nextZ(objRef.current.filter((o) => o.kind === kind), kind as GameObject["kind"]);
         const next = objRef.current.map((o) => (o.id === id ? { ...o, zOrder: maxZ } : o));
@@ -327,7 +373,7 @@ export default function Board({ roomId }: { roomId: string }) {
         scheduleSend({ kind: "updateObj", id, patch: { zOrder: maxZ } });
       }
     },
-    [applyObjectsLocally, scheduleSend]
+    [applyObjectsLocally, scheduleSend, dispatch]
   );
 
   const onBoardDrop = useCallback(
@@ -341,7 +387,7 @@ export default function Board({ roomId }: { roomId: string }) {
       if (draggingFromSidebar.type === "cardDef") {
         const def = draggingFromSidebar.data;
         const z = nextZ(objs.filter((o) => o.kind === "card"), "card");
-        const card = mkCardFromDef({ text: def.text, imageDataId: def.defId, defId: def.defId }, bx - 45, by - 63, z);
+        const card = mkCardFromDef({ text: def.text, imageDataId: def.imageDataId, defId: def.defId }, bx - 45, by - 63, z);
         next = [...objs, card];
         const deck = objs.filter((o) => o.kind === "deck").find((a) => ptInArea(bx, by, a as Deck)) as Deck | undefined;
         if (deck) next = addCardToArea(next, card.id, deck.id, "deck");
@@ -633,6 +679,7 @@ export default function Board({ roomId }: { roomId: string }) {
                   flashId={flashId}
                   onHoverCard={setHoverCardId}
                   onFlash={flash}
+                  burrowId={burrowId}
                 />
               ))}
             </div>
@@ -740,7 +787,7 @@ export default function Board({ roomId }: { roomId: string }) {
                   nd.w = d.w;
                   nd.h = d.h;
                   const newCards = cards.map((c, i) => ({
-                    ...mkCardFromDef({ text: c.text, defId: c.defId || undefined }, c.x + 20, c.y + 20, i),
+                    ...mkCardFromDef({ text: c.text, imageDataId: c.imageDataId, defId: c.defId || undefined }, c.x + 20, c.y + 20, i),
                     ownArea: { kind: "deck" as const, id: nd.id },
                   }));
                   dispatch({ kind: "setObjects", objects: [...objects, nd, ...newCards] });

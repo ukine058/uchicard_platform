@@ -251,7 +251,7 @@ export function CardDefDlg({
   const [inputType, setInputType] = useState<"text" | "image">(def?.imageDataId ? "image" : "text");
   const [text, setText] = useState(def?.text || "");
   const [previewUrl, setPreviewUrl] = useState(def?.imageDataId ? imageStore[def.imageDataId] || "" : "");
-  const imageDataId = def?.defId || newImageDataId;
+  const imageDataId = def?.imageDataId || def?.defId || newImageDataId;
   const fileRef = useRef<HTMLInputElement>(null);
 
   // 一括追加用：画像は複数選択、テキストは改行区切り

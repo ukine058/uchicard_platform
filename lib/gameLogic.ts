@@ -180,6 +180,12 @@ export function nextZ(objs: GameObject[], kind: GameObject["kind"]): number {
   return same.length === 0 ? 1 : Math.max(...same.map((o) => (o as any).zOrder || 0)) + 1;
 }
 
+// 一番奥（最背面）に送るためのZ値。カードの「潜り込み」操作で使用。
+export function prevZ(objs: GameObject[], kind: GameObject["kind"]): number {
+  const same = objs.filter((o) => o.kind === kind);
+  return same.length === 0 ? -1 : Math.min(...same.map((o) => (o as any).zOrder || 0)) - 1;
+}
+
 export function deckCards(objs: GameObject[], deckId: string): Card[] {
   return (objs.filter((o) => o.kind === "card" && (o as Card).ownArea?.id === deckId) as Card[]).sort(
     (a, b) => (a.zOrder || 0) - (b.zOrder || 0)
@@ -218,25 +224,29 @@ export function moveAreaWithCards(objs: GameObject[], areaId: string, dx: number
   });
 }
 
-// カードをエリアに入れる
+// カードをエリアに入れる。position="bottom" でカード束の一番下に入れる（潜り込み操作用）。
 export function addCardToArea(
   objs: GameObject[],
   cardId: string,
   areaId: string,
-  areaKind: "deck" | "hand"
+  areaKind: "deck" | "hand",
+  position: "top" | "bottom" = "top"
 ): GameObject[] {
   const area = objs.find((o) => o.id === areaId) as any;
   if (!area) return objs;
   const areaCards = objs.filter((o) => (o as Card).ownArea?.id === areaId);
-  const maxZ = areaCards.length === 0 ? 1 : Math.max(...areaCards.map((o) => (o as any).zOrder || 0)) + 1;
+  let z: number;
+  if (areaCards.length === 0) z = 1;
+  else if (position === "top") z = Math.max(...areaCards.map((o) => (o as any).zOrder || 0)) + 1;
+  else z = Math.min(...areaCards.map((o) => (o as any).zOrder || 0)) - 1;
   return objs.map((o) => {
     if (o.id !== cardId) return o;
     if (areaKind === "deck") {
       const cx = area.x + area.w / 2 - 45;
       const cy = area.y + area.h / 2 - 63;
-      return { ...o, ownArea: { kind: "deck", id: areaId }, x: cx, y: cy, rotation: 0, faceDown: true, zOrder: maxZ };
+      return { ...o, ownArea: { kind: "deck", id: areaId }, x: cx, y: cy, rotation: 0, faceDown: true, zOrder: z };
     } else {
-      return { ...o, ownArea: { kind: "hand", id: areaId }, zOrder: maxZ };
+      return { ...o, ownArea: { kind: "hand", id: areaId }, zOrder: z };
     }
   });
 }
