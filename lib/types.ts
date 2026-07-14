@@ -34,14 +34,12 @@ export type Card = {
   zOrder: number;
 };
 
-// チップの効果は自由記述テキストではなく、種別＋数値で構造化する。
-// （自由記述だと解釈がぶれる／誤入力に弱いため、種別を限定して書式を固定する方式を採用）
 export type ChipEffect =
-  | { op: "add"; amount: number } // 数値計算＋
-  | { op: "sub"; amount: number } // 数値計算－
-  | { op: "mul"; amount: number } // 数値計算×
-  | { op: "div"; amount: number } // 数値計算÷
-  | { op: "none" }; // 効果なし（装飾・目印用）
+  | { op: "add"; amount: number }
+  | { op: "sub"; amount: number }
+  | { op: "mul"; amount: number }
+  | { op: "div"; amount: number }
+  | { op: "none" };
 
 export type ChipDef = {
   defId: string;
@@ -70,6 +68,7 @@ export type Deck = {
   w: number;
   h: number;
   name: string;
+  rotation?: number;
 };
 
 export type Hand = {
@@ -81,6 +80,7 @@ export type Hand = {
   h: number;
   name: string;
   ownerId: string | null;
+  rotation?: number;
 };
 
 export type Counter = {
@@ -90,6 +90,7 @@ export type Counter = {
   y: number;
   name: string;
   value: number;
+  rotation?: number;
 };
 
 export type GameObject = Card | Chip | Deck | Hand | Counter;
@@ -136,7 +137,6 @@ export type ServerMessage =
   | { type: "players"; players: Player[]; connectedIds: string[] }
   | { type: "cursor"; playerId: string; x: number; y: number };
 
-// 組み込みのチップ定義（常に候補として表示される。編集・削除不可）
 export const CHIP_DEFS: ChipDef[] = [
   { defId: "c5", label: "+5", color: "#4ade80", effect: { op: "add", amount: 5 } },
   { defId: "c10", label: "+10", color: "#22c55e", effect: { op: "add", amount: 10 } },
@@ -171,4 +171,3 @@ export function defaultChipLabel(effect: ChipEffect): string {
       return "―";
   }
 }
-
