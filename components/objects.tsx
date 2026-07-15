@@ -129,7 +129,7 @@ export function CardObj({
         }}
         onMouseDown={(e) => {
           e.stopPropagation();
-          startDrag(e, obj.id, "card", true);
+          startDrag(e, obj.id, "card", true, { rotate: true });
         }}
       >
         ↻ 回転
@@ -456,7 +456,17 @@ export function HandObj({
   const isOwner = obj.ownerId === myId;
   return (
     <div
-      style={{ position: "absolute", left: obj.x, top: obj.y, width: obj.w, height: obj.h, zIndex: hovered ? 12 : 10, pointerEvents: "auto" }}
+      style={{
+        position: "absolute",
+        left: obj.x,
+        top: obj.y,
+        width: obj.w,
+        height: obj.h,
+        transform: `rotate(${obj.rotation || 0}deg)`,
+        transformOrigin: "center center",
+        zIndex: hovered ? 12 : 10,
+        pointerEvents: "auto",
+      }}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
     >
@@ -468,6 +478,34 @@ export function HandObj({
           </span>
         )}
       </div>
+      {mode === "edit" && hovered && (
+        <div
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            startDrag(e, obj.id, "hand", true, { rotate: true });
+          }}
+          style={{
+            position: "absolute",
+            top: -46,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: 28,
+            height: 18,
+            background: "#1d4ed8",
+            border: "2px solid #a78bfa",
+            borderRadius: 4,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 10,
+            color: "#e2e8f0",
+            cursor: "crosshair",
+            zIndex: 41,
+          }}
+        >
+          ↻
+        </div>
+      )}
       <div
         onMouseDown={(e) => mode === "edit" && startDrag(e, obj.id, "hand")}
         onDoubleClick={(e) => onDblClick(e, obj)}

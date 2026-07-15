@@ -201,10 +201,10 @@ export default function Board({ roomId }: { roomId: string }) {
         if (kind === "card") {
           centerX = target.x + 45;
           centerY = target.y + 63;
-        } else if (kind === "deck") {
-          const d = target as Deck;
-          centerX = d.x + d.w / 2;
-          centerY = d.y + d.h / 2;
+        } else if (kind === "deck" || kind === "hand") {
+          const a = target as Deck | Hand;
+          centerX = a.x + a.w / 2;
+          centerY = a.y + a.h / 2;
         } else {
           // カウンターは固定サイズの目安中心を使う（内容に応じた自動サイズのため）
           centerX = target.x + 50;

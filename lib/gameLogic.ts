@@ -151,6 +151,7 @@ export const mkHand = (x: number, y: number) => ({
   y,
   w: 300,
   h: 130,
+  rotation: 0,
   name: "手札エリア",
   ownerId: null,
 });

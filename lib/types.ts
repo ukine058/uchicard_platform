@@ -80,6 +80,7 @@ export type Hand = {
   y: number;
   w: number;
   h: number;
+  rotation: number;
   name: string;
   ownerId: string | null;
 };
