@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useHoverDelay } from "@/hooks/useHoverDelay";
-import { calcPower, deckCards } from "@/lib/gameLogic";
+import { calcPower, deckCards, autoTextFontSize } from "@/lib/gameLogic";
 import type { Card, Chip, Counter, Deck, GameObject, Hand } from "@/lib/types";
 
 type StartDrag = (e: React.MouseEvent, id: string, kind: string, isHandle?: boolean, opts?: any) => void;
@@ -167,11 +167,14 @@ export function CardObj({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: showFace ? 12 : 32,
+          fontSize: showFace ? autoTextFontSize(obj.text, 12) : 32,
+          lineHeight: 1.25,
           color: showFace ? "#e2e8f0" : "#1e3a5f",
           textAlign: "center",
           padding: 6,
           overflow: "hidden",
+          wordBreak: "break-word",
+          overflowWrap: "anywhere",
           transition: "border-color 0.12s,box-shadow 0.12s,filter 0.15s",
           position: "relative",
         }}
@@ -195,7 +198,16 @@ export function CardObj({
               style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 6 }}
             />
           ) : (
-            obj.text
+            <span
+              style={{
+                display: "-webkit-box",
+                WebkitBoxOrient: "vertical",
+                WebkitLineClamp: 7,
+                overflow: "hidden",
+              } as React.CSSProperties}
+            >
+              {obj.text}
+            </span>
           )
         ) : (
           "🂠"

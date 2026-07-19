@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoomSocket } from "@/hooks/useRoomSocket";
 import {
   addCardToArea,
+  autoTextFontSize,
   chipOnCard,
   clampChipToCard,
   mkCardFromDef,
@@ -803,13 +804,16 @@ export default function Board({ roomId }: { roomId: string }) {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 18,
+                  fontSize: autoTextFontSize(hc.text, 18),
+                  lineHeight: 1.3,
                   color: "#e2e8f0",
                   textAlign: "center",
                   padding: 10,
                   pointerEvents: "none",
                   zIndex: 500,
                   overflow: "hidden",
+                  wordBreak: "break-word",
+                  overflowWrap: "anywhere",
                   opacity: hc.faceDown && isMyHand ? 0.7 : 1,
                 }}
               >
@@ -819,7 +823,16 @@ export default function Board({ roomId }: { roomId: string }) {
                 {imageStore[hc.imageDataId || hc.defId || ""] ? (
                   <img src={imageStore[hc.imageDataId || hc.defId || ""]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 10 }} />
                 ) : (
-                  hc.text
+                  <span
+                    style={{
+                      display: "-webkit-box",
+                      WebkitBoxOrient: "vertical",
+                      WebkitLineClamp: 10,
+                      overflow: "hidden",
+                    } as React.CSSProperties}
+                  >
+                    {hc.text}
+                  </span>
                 )}
               </div>
             );

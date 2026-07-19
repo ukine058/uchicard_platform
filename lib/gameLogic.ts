@@ -14,7 +14,15 @@ import type {
 let _uid = 1;
 export const uid = () => `o${Date.now().toString(36)}${(_uid++).toString(36)}`;
 
-// パワー計算（5刻み切り捨て）
+// カードの文字数に応じてフォントサイズを縮小し、長文でも枠内に収まりやすくする
+export function autoTextFontSize(text: string, base: number): number {
+  const len = (text || "").length;
+  if (len <= 16) return base;
+  if (len <= 30) return Math.round(base * 0.85 * 10) / 10;
+  if (len <= 50) return Math.round(base * 0.7 * 10) / 10;
+  if (len <= 80) return Math.round(base * 0.58 * 10) / 10;
+  return Math.round(base * 0.48 * 10) / 10;
+}
 export function calcPower(chips: Chip[]): string {
   let base = 0;
   let multi = 1;
